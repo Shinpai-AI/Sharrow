@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+
+# Logs
+*.log
+TKB.log
+hourly-news.log
+weekly_update.log
+mt5_log_cleaner.log
+TKB-Data-Refresh.log
+
+# Training artifacts
+models/
+reports/
+welldone*.txt
+rules_*.txt
+
+# Data files
+*.csv
+*_extend.csv
+*_Info.txt
+SymbolDataExport.csv
+
+# MT5 specific
+*.ex5
+
+# System files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Secrets (safety net - should already be anonymized!)
+*api_key*
+*secret*
+*token*
+*.env
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
