@@ -1,6 +1,5 @@
-// Sharrow.mq5 – Institutional Precision Edition (H1 Trading Only + Multi-TF Export + ULTRA CLEAN CSV + SMART NEWS v6.0)
+// Sharrow.mq5 – AI Trading System (H1 Trading + Multi-TF Export + News Integration v6.0)
 // Copyright: Shinpai-AI — Publisher: Shinpai
-// Coder: GPT-5
 // Link: https://github.com/Shinpai-AI/Sharrow
 // Version: 6.0 (Showcase Cleanup + Smart Asset Detection)
 
@@ -104,7 +103,10 @@ enum ENUM_SIGNAL_MODE {
    SIGNAL_B_RULES_NEWS_STRIKT = 1,     // B: Rules + News (News bestätigt Rules)
    SIGNAL_C_RULES_NEWS_SCHUTZ = 2,     // C: Rules + News (News darf neutral bleiben)
    SIGNAL_D_LOGIC_NEWS_STRIKT = 3,     // D: Logic + News (News bestätigt Logic)
-   SIGNAL_E_LOGIC_NEWS_SCHUTZ = 4      // E: Logic + News (News darf neutral bleiben)
+   SIGNAL_E_LOGIC_NEWS_SCHUTZ = 4,     // E: Logic + News (News darf neutral bleiben)
+   SIGNAL_F_CASINO_NEWS_ZUSTIMMUNG = 5,  // F: Casino-Logik + News (News muss zustimmen)
+   SIGNAL_G_CASINO_NEWS_WIDERSPRUCH = 6, // G: Casino-Logik + News (News darf neutral bleiben, nicht widersprechen)
+   SIGNAL_H_CASINO_NEWS_IGNORE = 7       // H: Casino-Logik (News wird ignoriert)
 };
 
 enum ENUM_MINUTE {
@@ -144,7 +146,7 @@ input bool EnableTrading = false;                     // Trading aktivieren/deak
 input group "=== FINALE SIGNAL ENTSCHEIDUNG ==="
 input bool NewsClosingEnabled = true;                 // News-Flip Trade-Closing als Versicherung aktivieren
 input bool RulesIntegration = true;                   // Rules liefern TP/SL/Lot & Trading-Freigabe nutzen
-input ENUM_SIGNAL_MODE SignalMode = SIGNAL_B_RULES_NEWS_STRIKT; // Finale Signal-Logik (A=Alle, B=Rules+News bestätigt, C=Rules+News neutral erlaubt, D=Logic+News bestätigt, E=Logic+News neutral erlaubt)
+input ENUM_SIGNAL_MODE SignalMode = SIGNAL_B_RULES_NEWS_STRIKT; // Finale Signal-Logik (A=Alle, B=Rules+News bestätigt, C=Rules+News neutral erlaubt, D=Logic+News bestätigt, E=Logic+News neutral erlaubt, F=Casino News Zustimmung, G=Casino News neutral, H=Casino News ignorieren)
 
 input group "=== DIAGNOSE & DEBUG ==="
 input bool EnableDebug = false;                        // Debug-Logs aktivieren
@@ -155,8 +157,13 @@ input bool CooldownWaitForNewH1Bar = true;            // Nach SL neue H1-Kerze a
 input bool EnableBreakEven = true;                    // Break-Even Absicherung aktivieren
 input double BreakEvenTriggerATR = 0.5;               // SL nachziehen ab Gewinn >= X * ATR
 input double BreakEvenOffsetPips = 1.0;               // Sicherheitsabstand über/unter Entry (in Pips)
+input double BreakEvenTriggerPips = 3.0;              // Break-Even sobald Gewinn >= X Pips (0 = deaktiviert)
+input double BreakEvenTriggerMoney = 0.30;            // Break-Even sobald Gewinn >= X Kontowährung (0 = deaktiviert)
 input bool TrailingStopEnabled = true;               // Dynamischen Trailing-SL nach Gewinn aktivieren
-input double TrailingStepPips = 8.0;                  // Pips-Abstand für Trailing-SL
+input double TrailingStepPips = 8.0;                  // Maximaler Pips-Abstand für Trailing-SL
+input double TrailingMinStepPips = 3.0;               // Minimaler Pips-Abstand für Trailing-SL
+input double TrailingAtrFactor = 0.35;                // Anteil des ATR-Wertes für dynamischen Schritt
+input double TrailingTpShare = 0.7;                   // Anteil des Abstands zum TP, der maximal genutzt wird
 
 input group "=== ZEIT & GAP SCHUTZ ==="
 input bool NightStopEnabled = true;                   // Night-Break aktivieren (Handel pausiert nachts)
@@ -181,6 +188,9 @@ input ENUM_TP_MULTIPLIER FixedTP = TP_2_0;            // Take-Profit (Fallback)
 input ENUM_SL_VARIANT FixedSL = SL_2_0ATR;            // Stop-Loss (Fallback)
 input bool UseSpreadAdjustment = true;                // Live-Spread zu TP addieren (Broker-Realität)
 input int OrderDeviationPoints = 20;                  // Maximaler Slippage-Puffer für Market Orders (in Punkten)
+
+input group "=== CASINO CHAOS MODUS ==="
+input bool CasinoModeEnabled = false;                 // Chaos-Erkennung aktivieren
 
 input group "=== INDIKATOREN ==="
 input int Stochastic_K_Period = 14;                   // Stochastic K-Periode
@@ -221,6 +231,16 @@ string account_currency;
 datetime last_export = 0, last_rules_import = 0;
 datetime last_export_date = 0, last_import_date = 0;
 const double MIN_STOP_BUFFER_PIPS = 5.0;             // Mindestens so viele Pips Abstand zu SL/TP (zusätzlich zum Broker-Minimum)
+const double CASINO_PRICE_TOLERANCE_MULTIPLIER = 0.1; // Anteil des Pip-Size als Toleranz für Trendprüfung
+const int    CASINO_BASELINE_HOURS = 24 * 120;       // ~120 Tage für Baseline
+const int    CASINO_RECENT_HOURS   = 24 * 4;         // Letzte 4 Tage für kurzfristige Analyse
+const double CASINO_RATIO_BUFFER   = 0.05;           // Puffer auf das Ratio-Quantil
+const double CASINO_MIN_RATIO_TRIGGER = 1.15;        // Mindest-Ratio, selbst wenn Quantil kleiner ist
+const double CASINO_CHURN_STD_MULTIPLIER = 1.0;      // Multiplikator auf Baseline-Std für Churn
+const double CASINO_MIN_CHURN_TRIGGER   = 3.0;       // Mindest-Churn-Triggervalue
+const int    CASINO_M1_TREND_BARS      = 15;         // Anzahl M1-Kerzen für Momentum-Check
+const int    CASINO_M15_CONFIRM_BARS   = 2;          // Anzahl M15-Kerzen für Bestätigung
+const double CASINO_MIN_IMPULSE_PIPS   = 5.0;        // Mindest-Impuls in Pips (M1 Start → Ende)
 
 // 🚀 NEUE GLOBALE VARIABLE: Optimierte Parameter für aktuelles Symbol  
 OptimizedParameters g_optimized_params;
@@ -236,6 +256,30 @@ datetime history_sync_from = 0;
 // === STATE LOGGING ===
 string STATE_LOG_FILE = "Sharrow-state.log";
 
+// === CASINO STATUS TRACKING ===
+bool   g_casino_active = false;
+int    g_casino_direction = 0;
+double g_casino_ratio = 0.0;
+double g_casino_median = 0.0;
+string g_casino_last_reason = "";
+
+struct CasinoDynamicStats {
+   bool initialized;
+   double median_atr;
+   double ratio_trigger;
+   double ratio_quantile;
+   double churn_trigger;
+   double churn_baseline_mean;
+   double churn_baseline_std;
+   double churn_recent_mean;
+   double churn_current;
+   datetime last_update_bar;
+};
+
+CasinoDynamicStats g_casino_stats = {false, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0};
+double g_casino_churn_values[];
+int g_casino_churn_count = 0;
+
 void StateLog(const string event, const string details)
 {
    int handle = FileOpen(STATE_LOG_FILE, FILE_READ | FILE_WRITE | FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_TXT);
@@ -249,6 +293,415 @@ void StateLog(const string event, const string details)
    FileWrite(handle, line);
    FileFlush(handle);
    FileClose(handle);
+}
+
+double ComputeMedian(double &values[], const int count)
+{
+   if(count <= 0)
+      return 0.0;
+
+   double tmp[];
+   if(ArrayResize(tmp, count) != count)
+      return 0.0;
+
+   for(int i = 0; i < count; ++i)
+      tmp[i] = values[i];
+
+   ArraySort(tmp);
+
+   if((count % 2) == 0)
+      return 0.5 * (tmp[count / 2] + tmp[count / 2 - 1]);
+
+   return tmp[count / 2];
+}
+
+double ComputeQuantile(double &values[], const int count, double quantile)
+{
+   if(count <= 0)
+      return 0.0;
+   double tmp[];
+   if(ArrayResize(tmp, count) != count)
+      return 0.0;
+   for(int i = 0; i < count; ++i)
+      tmp[i] = values[i];
+   ArraySort(tmp);
+   if(quantile <= 0.0)
+      return tmp[0];
+   if(quantile >= 1.0)
+      return tmp[count - 1];
+   double idx = (count - 1) * quantile;
+   int lower = (int)MathFloor(idx);
+   int upper = (int)MathCeil(idx);
+   if(lower == upper)
+      return tmp[lower];
+   double weight = idx - lower;
+   return tmp[lower] + weight * (tmp[upper] - tmp[lower]);
+}
+
+double ComputeArrayMean(double &values[], int count)
+{
+   if(count <= 0)
+      return 0.0;
+   double sum = 0.0;
+   for(int i = 0; i < count; ++i)
+      sum += values[i];
+   return sum / count;
+}
+
+double ComputeArrayStd(double &values[], int count, double mean)
+{
+   if(count <= 1)
+      return 0.0;
+   double accum = 0.0;
+   for(int i = 0; i < count; ++i)
+   {
+      double diff = values[i] - mean;
+      accum += diff * diff;
+   }
+   return MathSqrt(MathMax(accum / count, 0.0));
+}
+
+bool ComputeChurnForBar(const datetime bar_time, double &churn_out)
+{
+   churn_out = 0.0;
+   int h1_index = iBarShift(_Symbol, PERIOD_H1, bar_time, false);
+   if(h1_index < 0)
+      return false;
+
+   double high = iHigh(_Symbol, PERIOD_H1, h1_index);
+   double low  = iLow(_Symbol, PERIOD_H1, h1_index);
+   double range = high - low;
+   if(range <= 0.0)
+      return true; // Kein Range = kein Churn
+
+   datetime start_time = bar_time;
+   datetime end_time = bar_time + 3600;
+
+   datetime m1_times[];
+   double   m1_closes[];
+   int m1_count = CopyTime(_Symbol, PERIOD_M1, start_time, end_time, m1_times);
+   if(m1_count <= 1)
+      return false;
+   if(CopyClose(_Symbol, PERIOD_M1, start_time, end_time, m1_closes) != m1_count)
+      return false;
+
+   ArraySetAsSeries(m1_times, false);
+   ArraySetAsSeries(m1_closes, false);
+
+   double sum_abs = 0.0;
+   for(int i = 1; i < m1_count; ++i)
+      sum_abs += MathAbs(m1_closes[i] - m1_closes[i - 1]);
+
+   churn_out = (range > 0.0) ? (sum_abs / range) : 0.0;
+   return true;
+}
+
+void ShiftChurnHistory()
+{
+   int max_size = ArraySize(g_casino_churn_values);
+   if(max_size <= 1)
+      return;
+   for(int i = MathMin(g_casino_churn_count, max_size) - 1; i > 0; --i)
+      g_casino_churn_values[i] = g_casino_churn_values[i - 1];
+}
+
+bool InsertChurnValue(double value)
+{
+   if(value < 0.0)
+      value = 0.0;
+   int max_size = ArraySize(g_casino_churn_values);
+   if(max_size == 0)
+   {
+      ArrayResize(g_casino_churn_values, CASINO_BASELINE_HOURS);
+      max_size = CASINO_BASELINE_HOURS;
+   }
+   ShiftChurnHistory();
+   g_casino_churn_values[0] = value;
+   g_casino_churn_count = MathMin(g_casino_churn_count + 1, max_size);
+   return true;
+}
+
+bool InitializeCasinoStats();
+bool UpdateCasinoStats(const bool force_recalc = false);
+
+bool InitializeCasinoStats()
+{
+   if(!CasinoModeEnabled)
+      return false;
+
+   if(ArraySize(g_casino_churn_values) != CASINO_BASELINE_HOURS)
+      ArrayResize(g_casino_churn_values, CASINO_BASELINE_HOURS);
+
+   g_casino_churn_count = 0;
+
+   for(int shift = CASINO_BASELINE_HOURS; shift >= 1; --shift)
+   {
+      datetime bar_time = iTime(_Symbol, PERIOD_H1, shift);
+      if(bar_time == 0)
+         continue;
+      double churn = 0.0;
+      if(!ComputeChurnForBar(bar_time, churn))
+         continue;
+      if(g_casino_churn_count >= CASINO_BASELINE_HOURS)
+         break;
+      g_casino_churn_values[g_casino_churn_count++] = churn;
+   }
+
+   if(g_casino_churn_count == 0)
+      return false;
+
+   for(int i = 0; i < g_casino_churn_count / 2; ++i)
+   {
+      double tmp = g_casino_churn_values[i];
+      int j = g_casino_churn_count - 1 - i;
+      g_casino_churn_values[i] = g_casino_churn_values[j];
+      g_casino_churn_values[j] = tmp;
+   }
+
+   g_casino_stats.initialized = true;
+   g_casino_stats.last_update_bar = iTime(_Symbol, PERIOD_H1, 1);
+   return UpdateCasinoStats(true);
+}
+
+bool UpdateCasinoStats(const bool force_recalc)
+{
+   if(!CasinoModeEnabled)
+      return false;
+
+   if(!g_casino_stats.initialized)
+      if(!InitializeCasinoStats())
+         return false;
+
+   datetime last_closed_bar = iTime(_Symbol, PERIOD_H1, 1);
+   if(last_closed_bar == 0)
+      return false;
+
+   bool new_bar_detected = (g_casino_stats.last_update_bar != last_closed_bar);
+
+   if(new_bar_detected)
+   {
+      double churn = 0.0;
+      if(ComputeChurnForBar(last_closed_bar, churn))
+         InsertChurnValue(churn);
+      g_casino_stats.last_update_bar = last_closed_bar;
+   }
+
+   if(!force_recalc && !new_bar_detected && g_casino_stats.ratio_trigger > 0.0)
+      return true;
+
+   int available = g_casino_churn_count;
+   if(available <= 0)
+      return false;
+
+   double sum = 0.0;
+   double sum_sq = 0.0;
+   int valid = 0;
+   for(int i = 0; i < available; ++i)
+   {
+      double v = g_casino_churn_values[i];
+      if(v <= 0.0)
+         continue;
+      sum += v;
+      sum_sq += v * v;
+      valid++;
+   }
+
+   if(valid == 0)
+      return false;
+
+   double baseline_mean = sum / valid;
+   double variance = MathMax(sum_sq / valid - baseline_mean * baseline_mean, 0.0);
+   double baseline_std = MathSqrt(variance);
+
+   int recent_limit = MathMin(MathMin(CASINO_RECENT_HOURS, available), valid);
+   double recent_sum = 0.0;
+   int recent_count = 0;
+   for(int i = 0; i < recent_limit; ++i)
+   {
+      double v = g_casino_churn_values[i];
+      if(v <= 0.0)
+         continue;
+      recent_sum += v;
+      recent_count++;
+   }
+
+   double recent_mean = (recent_count > 0) ? recent_sum / recent_count : baseline_mean;
+   g_casino_stats.churn_baseline_mean = baseline_mean;
+   g_casino_stats.churn_baseline_std = baseline_std;
+   g_casino_stats.churn_recent_mean = recent_mean;
+   g_casino_stats.churn_current = g_casino_churn_values[0];
+   g_casino_stats.churn_trigger = MathMax(CASINO_MIN_CHURN_TRIGGER, baseline_mean + CASINO_CHURN_STD_MULTIPLIER * baseline_std);
+
+   int atr_count_needed = MathMin(CASINO_BASELINE_HOURS, valid);
+   if(atr_count_needed < 50)
+      return false;
+
+   double atr_history[];
+   ArraySetAsSeries(atr_history, true);
+   int atr_copied = CopyBuffer(atr_handle, 0, 1, atr_count_needed, atr_history);
+   if(atr_copied <= 0)
+      return false;
+   ArraySetAsSeries(atr_history, false);
+
+   double atr_median = ComputeMedian(atr_history, atr_copied);
+   if(atr_median <= 0.0)
+      return false;
+
+   double ratio_values[];
+   if(ArrayResize(ratio_values, atr_copied) != atr_copied)
+      return false;
+   for(int i = 0; i < atr_copied; ++i)
+      ratio_values[i] = atr_history[i] / atr_median;
+
+   double ratio_quantile = ComputeQuantile(ratio_values, atr_copied, 0.95);
+   g_casino_stats.median_atr = atr_median;
+   g_casino_stats.ratio_quantile = ratio_quantile;
+   g_casino_stats.ratio_trigger = MathMax(CASINO_MIN_RATIO_TRIGGER, ratio_quantile + CASINO_RATIO_BUFFER);
+
+   return true;
+}
+
+bool DetectCasinoSignal(double atr_current, int &direction, double &ratio, double &median, string &reason)
+{
+   direction = 0;
+   ratio = 0.0;
+   median = 0.0;
+   reason = "";
+
+   if(!CasinoModeEnabled)
+   {
+      reason = "Casino disabled";
+      return false;
+   }
+
+   if(!is_h1_timeframe)
+   {
+      reason = "Casino nur auf H1 aktiv";
+      return false;
+   }
+
+   if(atr_current <= 0.0)
+   {
+      reason = "ATR <= 0";
+      return false;
+   }
+
+   if(!UpdateCasinoStats(false))
+   {
+      reason = "Casino-Statistiken fehlen";
+      return false;
+   }
+
+   median = g_casino_stats.median_atr;
+   if(median <= 0.0)
+   {
+      reason = "ATR Baseline fehlt";
+      return false;
+   }
+
+   ratio = atr_current / median;
+   bool ratio_hot = (ratio >= g_casino_stats.ratio_trigger);
+   bool churn_hot = (g_casino_stats.churn_current >= g_casino_stats.churn_trigger);
+
+   if(!ratio_hot && !churn_hot)
+   {
+      reason = StringFormat("Ratio %.2f<%.2f & Churn %.2f<%.2f",
+                            ratio, g_casino_stats.ratio_trigger,
+                            g_casino_stats.churn_current, g_casino_stats.churn_trigger);
+      return false;
+   }
+
+   int m1_bars = MathMax(CASINO_M1_TREND_BARS, 3);
+   double m1_close[];
+   ArraySetAsSeries(m1_close, true);
+   int m1_copied = CopyClose(_Symbol, PERIOD_M1, 1, m1_bars, m1_close);
+   if(m1_copied < m1_bars)
+   {
+      reason = "M1 Historie unvollständig";
+      return false;
+   }
+
+   double pip_value = (g_pip_size > 0.0 ? g_pip_size : _Point);
+   double tolerance = MathMax(pip_value * CASINO_PRICE_TOLERANCE_MULTIPLIER, _Point);
+
+   bool m1_up = true;
+   bool m1_down = true;
+   for(int i = 0; i < m1_bars - 1; ++i)
+   {
+      double current = m1_close[i];
+      double previous = m1_close[i + 1];
+
+      if(current > previous + tolerance)
+      {
+         m1_down = false;
+      }
+      else if(current < previous - tolerance)
+      {
+         m1_up = false;
+      }
+      else
+      {
+         m1_up = false;
+         m1_down = false;
+         break;
+      }
+   }
+
+   int m1_direction = 0;
+   if(m1_up && !m1_down)
+      m1_direction = 1;
+   else if(m1_down && !m1_up)
+      m1_direction = -1;
+
+   if(m1_direction == 0)
+   {
+      reason = "M1 Impuls inkonsistent";
+      return false;
+   }
+
+   double m1_move = MathAbs(m1_close[0] - m1_close[m1_bars - 1]);
+   double m1_move_pips = m1_move / pip_value;
+   if(m1_move < CASINO_MIN_IMPULSE_PIPS * pip_value)
+   {
+      reason = StringFormat("Impuls %.1f < Mindest %.1f Pips", m1_move_pips, CASINO_MIN_IMPULSE_PIPS);
+      return false;
+   }
+
+   int m15_bars = MathMax(CASINO_M15_CONFIRM_BARS, 2);
+   double m15_close[];
+   ArraySetAsSeries(m15_close, true);
+   int m15_copied = CopyClose(_Symbol, PERIOD_M15, 1, m15_bars, m15_close);
+   if(m15_copied < m15_bars)
+   {
+      reason = "M15 Historie unvollständig";
+      return false;
+   }
+
+   double m15_change = m15_close[0] - m15_close[m15_bars - 1];
+   int m15_direction = 0;
+   if(m15_change > tolerance)
+      m15_direction = 1;
+   else if(m15_change < -tolerance)
+      m15_direction = -1;
+
+   if(m15_direction == 0)
+   {
+      reason = "M15 neutral";
+      return false;
+   }
+
+   if(m15_direction != m1_direction)
+   {
+      reason = "M1/M15 Richtung mismatch";
+      return false;
+   }
+
+   direction = m1_direction;
+   reason = StringFormat("ratio %.2f/%.2f, churn %.2f/%.2f, impulse %.1f Pips",
+                         ratio, g_casino_stats.ratio_trigger,
+                         g_casino_stats.churn_current, g_casino_stats.churn_trigger,
+                         m1_move_pips);
+   return true;
 }
 
 void ActivateMarginBlock(double lot)
@@ -414,9 +867,49 @@ void HandleTrailingStop()
    double current_sl = PositionGetDouble(POSITION_SL);
    double current_tp = PositionGetDouble(POSITION_TP);
 
-   double step_price = TrailingStepPips * g_pip_size;
+   double pip_size = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   double max_step_pips = MathMax(TrailingStepPips, 0.0);
+   double min_step_pips = MathMax(TrailingMinStepPips, 0.0);
+   if(min_step_pips > 0.0 && min_step_pips > max_step_pips)
+      max_step_pips = min_step_pips;
+
+   double step_pips = max_step_pips;
+   if(g_last_atr_value > 0.0 && TrailingAtrFactor > 0.0)
+   {
+      double atr_step = (g_last_atr_value / pip_size) * TrailingAtrFactor;
+      if(atr_step > 0.0)
+         step_pips = MathMin(step_pips, atr_step);
+   }
+
+   if(current_tp > 0.0 && TrailingTpShare > 0.0)
+   {
+      double tp_distance_price = MathAbs(current_price - current_tp);
+      double tp_distance_pips = tp_distance_price / pip_size;
+      if(tp_distance_pips > 0.0)
+      {
+         double tp_step = tp_distance_pips * TrailingTpShare;
+         if(tp_step > 0.0)
+            step_pips = MathMin(step_pips, tp_step);
+      }
+   }
+
+   step_pips = MathMax(step_pips, min_step_pips);
+
+   double step_price = step_pips * pip_size;
    if(step_price < _Point)
       step_price = _Point;
+
+   double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double min_broker_distance = stop_level_points * _Point;
+   if(min_broker_distance > 0.0)
+   {
+      double required_step = min_broker_distance + MIN_STOP_BUFFER_PIPS * pip_size;
+      if(step_price < required_step)
+      {
+         step_price = required_step;
+         step_pips = step_price / pip_size;
+      }
+   }
 
    double profit_distance = (position_type == POSITION_TYPE_BUY)
                             ? (current_price - entry_price)
@@ -424,11 +917,6 @@ void HandleTrailingStop()
 
    if(profit_distance <= step_price)
       return;
-
-   double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double min_broker_distance = stop_level_points * _Point;
-   if(min_broker_distance > 0.0)
-      step_price = MathMax(step_price, min_broker_distance + MIN_STOP_BUFFER_PIPS * g_pip_size);
 
    double desired_sl = (position_type == POSITION_TYPE_BUY)
                        ? current_price - step_price
@@ -468,7 +956,7 @@ void HandleTrailingStop()
                                     entry_price,
                                     current_price,
                                     desired_sl,
-                                    TrailingStepPips);
+                                    step_pips);
       StateLog("TRAILING_UPDATE", details);
       Print("TRAILING-SL aktualisiert: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
             " SL→", DoubleToString(desired_sl, _Digits));
@@ -481,7 +969,7 @@ void HandleTrailingStop()
                                     entry_price,
                                     current_price,
                                     desired_sl,
-                                    TrailingStepPips,
+                                    step_pips,
                                     err);
       StateLog("TRAILING_FAIL", details);
       Print("TRAILING-SL FEHLGESCHLAGEN: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
@@ -526,6 +1014,74 @@ bool global_trade_active = true;  // TradeActive Flag aus Rules - Standard: akti
 double g_last_atr_value = 0.0;    // Letzter ATR-Wert für Trailing-/BreakEven-Berechnungen
 bool account_too_small = false;    // Trigger: Konto zu klein für Symbol
 double global_lot_size = 0.0;     // LotSize aus Rules - 0.0 = verwende EA Einstellungen
+double g_break_even_entry_price = 0.0;  // Erster/maßgeblicher Einstiegspreis der laufenden Position
+int g_break_even_position_type = -1;    // Positionstyp für Break-Even-Anker (-1 = keine Position)
+
+bool AdjustStopsForBroker(bool is_buy, double market_price, double &sl_price, double &tp_price)
+{
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   long stops_level = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double min_distance = stops_level * _Point;
+   double buffer_distance = MIN_STOP_BUFFER_PIPS * pip;
+
+   if(buffer_distance > min_distance)
+      min_distance = buffer_distance;
+   if(min_distance < pip)
+      min_distance = pip;
+
+   bool adjusted = false;
+
+   if(is_buy)
+   {
+      if(sl_price <= 0.0 || (market_price - sl_price) < min_distance)
+      {
+         sl_price = NormalizeDouble(market_price - min_distance, _Digits);
+         adjusted = true;
+      }
+      if(tp_price != EMPTY_VALUE && tp_price > 0.0 && (tp_price - market_price) < min_distance)
+      {
+         tp_price = NormalizeDouble(market_price + min_distance, _Digits);
+         adjusted = true;
+      }
+   }
+   else
+   {
+      if(sl_price <= 0.0 || (sl_price - market_price) < min_distance)
+      {
+         sl_price = NormalizeDouble(market_price + min_distance, _Digits);
+         adjusted = true;
+      }
+      if(tp_price != EMPTY_VALUE && tp_price > 0.0 && (market_price - tp_price) < min_distance)
+      {
+         tp_price = NormalizeDouble(market_price - min_distance, _Digits);
+         adjusted = true;
+      }
+   }
+
+   if(adjusted)
+   {
+      double min_distance_pips = (pip > 0.0) ? (min_distance / pip) : 0.0;
+      string tp_info = (tp_price != EMPTY_VALUE && tp_price > 0.0)
+                       ? DoubleToString(tp_price, _Digits)
+                       : "EMPTY";
+      if(EnableDebug)
+      {
+         Print("STOPLEVEL ADJUST: ", _Symbol,
+               " type=", (is_buy ? "BUY" : "SELL"),
+               " min_dist_pips=", DoubleToString(min_distance_pips, 2),
+               " new_sl=", DoubleToString(sl_price, _Digits),
+               " new_tp=", tp_info);
+      }
+      StateLog("STOPLEVEL_ADJUST",
+               StringFormat("type=%s min_dist=%.2fpips sl=%.5f tp=%s",
+                            (is_buy ? "BUY" : "SELL"),
+                            min_distance_pips,
+                            sl_price,
+                            tp_info));
+   }
+
+   return adjusted;
+}
 
 // Margin-Watch: blockt neue Orders nach ERR_NOT_ENOUGH_MONEY bis Positionen abgebaut sind
 bool margin_block_active = false;
@@ -533,12 +1089,15 @@ int  margin_block_positions = 0;
 datetime margin_block_start = 0;
 datetime margin_block_last_notice = 0;
 
+// Night-Stop Logging Guard
+bool g_night_stop_notice_sent = false;
+
 // === NEWS-SENTIMENT SYSTEM - Einfaches News-Closing ===
 int trade_entry_sentiment = 0;    // News-Sentiment beim Trade-Start: 1=BULLISH, -1=BEARISH, 0=NEUTRAL
 datetime trade_entry_time = 0;    // Zeitpunkt der Trade-Eröffnung
 bool news_closing_enabled = true; // News-Closing aktivieren/deaktivieren
 
-// === SHARROW DECISION TREE ENGINE ===
+// === GOLDJUNGE DECISION TREE ENGINE ===
 // RuleNode für 4-Stage Pipeline (stochastic, adx, atr, weibull_prob, poisson_prob, volume)
 struct GoldRuleNode {
    string feature;        // "stochastic", "adx", "atr", "weibull_prob", "poisson_prob", "volume"
@@ -977,16 +1536,22 @@ double ConvertToAccountCurrency(double value, string symbol) {
    string base_currency = StringSubstr(symbol, 0, 3);
    string quote_currency = StringSubstr(symbol, 3, 3);
    
-   // KRITISCHER FIX: Wenn Account-Währung = Base-Währung, ist der Wert bereits korrekt!
-   // Beispiel: EURCHF mit EUR-Account → value ist bereits in EUR
-   if(account_currency == base_currency) {
-      return value;  // KEIN Umrechnen nötig!
+   // Wenn Account-Währung = Quote-Währung, ist keine Umrechnung nötig
+   if(account_currency == quote_currency)
+      return value;
+
+   // Account-Währung entspricht der Basis? -> Quote -> Basis via Symbolpreis
+   if(account_currency == base_currency)
+   {
+      double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
+      if(bid <= 0.0)
+         bid = SymbolInfoDouble(symbol, SYMBOL_LAST);
+      if(bid > 0.0)
+         return value / bid;
+      return value; // Fallback, sollte praktisch nie auftreten
    }
-   
-   // Wenn Account-Währung = Quote-Währung, auch kein Umrechnen nötig
-   if(account_currency == quote_currency) return value;
-   
-   // Nur bei Cross-Currency-Paaren umrechnen
+
+   // Cross-Currency-Konvertierung: Wert liegt stets in Quote-Währung
    string pair = account_currency + quote_currency;
    double bid = SymbolInfoDouble(pair, SYMBOL_BID);
    if(bid > 0) return value / bid;
@@ -1354,8 +1919,8 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
          rule_count++;
       }
       
-      // === SHARROW DECISION TREE PARSER ===
-      // Parse Decision Tree Rules (adaptiert aus interner KI-Bot Bibliothek)
+      // === GOLDJUNGE DECISION TREE PARSER ===
+      // Parse Decision Tree Rules (adaptiert von Ray-KI-BotV5)
       if(StringFind(line, "|---") >= 0) {
          int content_start = 0;
          int indent = GetDecisionTreeIndent(line, content_start);
@@ -1583,7 +2148,7 @@ void CloseTradeOnNewsFlip() {
    if(CheckNewsFlip()) {
       double current_profit = PositionGetDouble(POSITION_PROFIT);
       if(trade.PositionClose(_Symbol)) {
-         Print("SHARROW NEWS-CLOSE: ", _Symbol, " geschlossen bei News-Flip, Profit: ", DoubleToString(current_profit, 2), " ", account_currency);
+         Print("GOLDJUNGE NEWS-CLOSE: ", _Symbol, " geschlossen bei News-Flip, Profit: ", DoubleToString(current_profit, 2), " ", account_currency);
          
          // Reset Trade-Sentiment nach erfolgreichem Close
          trade_entry_sentiment = 0;
@@ -1696,16 +2261,68 @@ bool IsCooldownActive(string &reason)
    return false;
 }
 
-void HandleBreakEven(double atr_value)
+void ResetBreakEvenAnchor()
 {
-   if(!EnableBreakEven || atr_value <= 0)
-      return;
+   g_break_even_entry_price = 0.0;
+   g_break_even_position_type = -1;
+}
 
+void UpdateBreakEvenAnchor()
+{
    if(!PositionSelect(_Symbol))
+   {
+      ResetBreakEvenAnchor();
       return;
+   }
+
+   double volume = PositionGetDouble(POSITION_VOLUME);
+   if(volume <= 0.0)
+   {
+      ResetBreakEvenAnchor();
+      return;
+   }
 
    int position_type = (int)PositionGetInteger(POSITION_TYPE);
    double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
+
+   if(g_break_even_entry_price <= 0.0 || g_break_even_position_type != position_type)
+   {
+      g_break_even_entry_price = entry_price;
+      g_break_even_position_type = position_type;
+      return;
+   }
+
+   if(position_type == POSITION_TYPE_BUY)
+   {
+      if(entry_price < g_break_even_entry_price)
+         g_break_even_entry_price = entry_price;
+   }
+   else if(position_type == POSITION_TYPE_SELL)
+   {
+      if(entry_price > g_break_even_entry_price)
+         g_break_even_entry_price = entry_price;
+   }
+}
+
+void HandleBreakEven(double atr_value)
+{
+   if(!EnableBreakEven)
+      return;
+
+   if(!PositionSelect(_Symbol))
+   {
+      ResetBreakEvenAnchor();
+      return;
+   }
+
+   int position_type = (int)PositionGetInteger(POSITION_TYPE);
+   if(g_break_even_position_type != position_type)
+   {
+      g_break_even_entry_price = 0.0;
+      g_break_even_position_type = position_type;
+   }
+
+   double entry_price = g_break_even_entry_price > 0.0 ? g_break_even_entry_price : PositionGetDouble(POSITION_PRICE_OPEN);
    double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
    double current_sl = PositionGetDouble(POSITION_SL);
    double current_tp = PositionGetDouble(POSITION_TP);
@@ -1713,15 +2330,23 @@ void HandleBreakEven(double atr_value)
    double current_profit = PositionGetDouble(POSITION_PROFIT);
 
    double price_diff = (position_type == POSITION_TYPE_BUY) ? (current_price - entry_price) : (entry_price - current_price);
-   double trigger = BreakEvenTriggerATR * atr_value;
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   double trigger_atr = (BreakEvenTriggerATR > 0.0 && atr_value > 0.0) ? BreakEvenTriggerATR * atr_value : 0.0;
+   double trigger_pips = (BreakEvenTriggerPips > 0.0 && pip > 0.0) ? BreakEvenTriggerPips * pip : 0.0;
+   bool atr_reached = (trigger_atr > 0.0) && (price_diff >= trigger_atr);
+   bool pip_reached = (trigger_pips > 0.0) && (price_diff >= trigger_pips);
+   bool money_reached = (BreakEvenTriggerMoney > 0.0) && (current_profit >= BreakEvenTriggerMoney);
 
-   if(price_diff < trigger)
+   if(!(atr_reached || pip_reached || money_reached))
+      return;
+
+   if(price_diff <= 0.0 && current_profit <= 0.0)
       return;
 
    double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double offset_price = MathMax(BreakEvenOffsetPips * g_pip_size, stop_level_points * _Point);
+   double offset_price = MathMax(BreakEvenOffsetPips * pip, stop_level_points * _Point);
    if(offset_price <= 0)
-      offset_price = _Point;
+      offset_price = pip > 0.0 ? pip : _Point;
 
    double new_sl = (position_type == POSITION_TYPE_BUY) ? entry_price + offset_price : entry_price - offset_price;
 
@@ -1740,31 +2365,44 @@ void HandleBreakEven(double atr_value)
    if(!needs_update)
       return;
 
+   string trigger_info = "";
+   if(atr_reached)
+      trigger_info += "ATR";
+   if(pip_reached)
+      trigger_info += (StringLen(trigger_info) > 0 ? "+PIPS" : "PIPS");
+   if(money_reached)
+      trigger_info += (StringLen(trigger_info) > 0 ? "+MONEY" : "MONEY");
+
+   double diff_pips = (pip > 0.0) ? price_diff / pip : 0.0;
+
    if(trade.PositionModify(_Symbol, new_sl, tp_for_modify))
    {
-      string details = StringFormat("type=%s entry=%.5f current=%.5f new_sl=%.5f tp=%.5f trigger=%.2fATR profit=%.2f",
-                                   position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                                   entry_price,
-                                   current_price,
-                                   new_sl,
-                                   current_tp,
-                                   BreakEvenTriggerATR,
-                                   current_profit);
+      string details = StringFormat("type=%s entry=%.5f current=%.5f new_sl=%.5f tp=%.5f profit=%.2f diff=%.2fpips trigger=%s",
+                                    position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
+                                    entry_price,
+                                    current_price,
+                                    new_sl,
+                                    current_tp,
+                                    current_profit,
+                                    diff_pips,
+                                    trigger_info);
       StateLog("BREAK_EVEN", details);
       Print("BREAK-EVEN aktiviert: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
-            " SL→", DoubleToString(new_sl, _Digits));
+            " SL→", DoubleToString(new_sl, _Digits),
+            " [", trigger_info, "]");
    }
    else
    {
       int err = GetLastError();
-      string err_msg = StringFormat("type=%s entry=%.5f current=%.5f attempted_sl=%.5f tp=%.5f trigger=%.2fATR profit=%.2f error=%d",
+      string err_msg = StringFormat("type=%s entry=%.5f current=%.5f attempted_sl=%.5f tp=%.5f profit=%.2f trigger=%s diff=%.2fpips error=%d",
                                    position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
                                    entry_price,
                                    current_price,
                                    new_sl,
                                    current_tp,
-                                   BreakEvenTriggerATR,
                                    current_profit,
+                                   trigger_info,
+                                   diff_pips,
                                    err);
       StateLog("BREAK_EVEN_FAIL", err_msg);
       Print("BREAK-EVEN FEHLGESCHLAGEN: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
@@ -1818,7 +2456,7 @@ int EvaluateDecisionTree(double stochastic, double adx, double atr, double weibu
 }
 
 // ===== RECURSIVE TREE TRAVERSAL ENGINE =====
-// Core recursive function (adaptiert aus interner KI-Bot Bibliothek für Sharrow Features)
+// Core recursive function (adaptiert von Ray-KI-BotV5 für Sharrow Features)
 int EvaluateGoldTreeRecursive(double stochastic, double adx, double atr, double weibull_prob, double poisson_prob, double volume, int node_index = 0) {
    // Validation
    if(node_index >= tree_node_count || node_index < 0) {
@@ -1903,16 +2541,24 @@ int GetRulesSignal() {
    double feature_weibull_prob = MathMin(1.0, price_change / (feature_atr * 2.0));
    double feature_poisson_prob = MathMin(1.0, feature_volume / 10000.0);
    
-   // REMOVED: Alle Feature-Normalisierungen entfernt!
-   // Rules enthalten bereits normalisierte Werte vom Train-KI-Bot
-   // Sharrow gibt RAW Werte an Rules → Rules entscheiden 1:1
+   // === FEATURE-NORMALISIERUNG (muss exakt zu Train-KI-Bot passen) ===
+   double norm_stochastic = (feature_stochastic - 50.0) / 30.0;
+   double norm_adx = (feature_adx - 30.0) / 20.0;
 
-   // feature_stochastic = (feature_stochastic - 50.0) / 30.0;  // REMOVED: Doppelte Normalisierung
-   // feature_adx = (feature_adx - 30.0) / 20.0;                // REMOVED: Doppelte Normalisierung
-   // feature_atr = (feature_atr - 0.001) / 0.002;              // REMOVED: Doppelte Normalisierung
-   // feature_weibull_prob = (feature_weibull_prob - 0.5) / 0.3; // REMOVED: Doppelte Normalisierung
-   // feature_poisson_prob = (feature_poisson_prob - 0.5) / 0.3; // REMOVED: Doppelte Normalisierung
-   
+   double pip_size = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   if(pip_size <= 0.0) pip_size = MathMax(0.0001, _Point);
+   double atr_scale = pip_size * 5000.0;
+   double norm_atr = (feature_atr - pip_size) / atr_scale;
+
+   double norm_weibull = (feature_weibull_prob - 0.5) / 0.3;
+   double norm_poisson = (feature_poisson_prob - 0.5) / 0.3;
+
+   if(!MathIsValidNumber(norm_stochastic)) norm_stochastic = 0.0;
+   if(!MathIsValidNumber(norm_adx)) norm_adx = 0.0;
+   if(!MathIsValidNumber(norm_atr)) norm_atr = 0.0;
+   if(!MathIsValidNumber(norm_weibull)) norm_weibull = 0.0;
+   if(!MathIsValidNumber(norm_poisson)) norm_poisson = 0.0;
+
    // TEMP DEBUG: Log all input features before DecisionTree (nur bei EnableDebug)
    if(EnableDebug) {
       Print("TEMP DEBUG GetRulesSignal - Features Input:");
@@ -1925,8 +2571,8 @@ int GetRulesSignal() {
    }
 
    // ATR NORMALISIERUNG GEFIXT - zurück zu normaler ATR-Nutzung
-   int tree_result = EvaluateDecisionTree(feature_stochastic, feature_adx, feature_atr,
-                                         feature_weibull_prob, feature_poisson_prob, feature_volume);
+   int tree_result = EvaluateDecisionTree(norm_stochastic, norm_adx, norm_atr,
+                                         norm_weibull, norm_poisson, feature_volume);
 
    if(EnableDebug) {
       Print("TEMP DEBUG GetRulesSignal - TreeResult: ", IntegerToString(tree_result));
@@ -1955,7 +2601,7 @@ int GetRulesSignal() {
    return rules_signal;
 }
 
-// ===== FINALE SIGNAL-LOGIK - SHARROW SIGNAL-SOURCE SYSTEM =====
+// ===== FINALE SIGNAL-LOGIK - GOLDJUNGE SIGNAL-SOURCE SYSTEM =====
 string DescribeSignalMode(ENUM_SIGNAL_MODE mode) {
    switch(mode) {
       case SIGNAL_A_ALLE_SYNCHRON: return "A: Alle Signale übereinstimmen";
@@ -1963,12 +2609,19 @@ string DescribeSignalMode(ENUM_SIGNAL_MODE mode) {
       case SIGNAL_C_RULES_NEWS_SCHUTZ: return "C: Rules + News (News darf neutral bleiben)";
       case SIGNAL_D_LOGIC_NEWS_STRIKT: return "D: Logic + News (News bestätigt)";
       case SIGNAL_E_LOGIC_NEWS_SCHUTZ: return "E: Logic + News (News darf neutral bleiben)";
+      case SIGNAL_F_CASINO_NEWS_ZUSTIMMUNG: return "F: Casino + News (News muss zustimmen)";
+      case SIGNAL_G_CASINO_NEWS_WIDERSPRUCH: return "G: Casino + News (News darf neutral)";
+      case SIGNAL_H_CASINO_NEWS_IGNORE: return "H: Casino (News ignorieren)";
    }
    return "UNKNOWN";
 }
 
-int GetFinalSignal(int rule_signal, int logic_signal, int news_signal, double rule_win_rate, string adx_strength) {
-   ENUM_SIGNAL_MODE mode = SignalMode;
+int GetFinalSignal(int rule_signal,
+                   int logic_signal,
+                   int news_signal,
+                   double rule_win_rate,
+                   string adx_strength,
+                   ENUM_SIGNAL_MODE mode) {
    string mode_label = DescribeSignalMode(mode);
    bool news_available = news_proved;
    int direction = 0;
@@ -2053,6 +2706,42 @@ int GetFinalSignal(int rule_signal, int logic_signal, int news_signal, double ru
          }
          if(news_signal != 0 && news_signal != logic_signal) {
             DebugLog("KEIN SIGNAL [" + mode_label + "]: News widersprechen Logic (Logic=" + IntegerToString(logic_signal) + ", News=" + IntegerToString(news_signal) + ")");
+            return 0;
+         }
+         direction = logic_signal;
+         break;
+
+      case SIGNAL_F_CASINO_NEWS_ZUSTIMMUNG:
+         if(logic_signal == 0) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: Casino-Logic neutral");
+            return 0;
+         }
+         if(!news_available) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: News nicht importiert");
+            return 0;
+         }
+         if(news_signal != logic_signal) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: News muss Casino bestätigen (Logic=" + IntegerToString(logic_signal) + ", News=" + IntegerToString(news_signal) + ")");
+            return 0;
+         }
+         direction = logic_signal;
+         break;
+
+      case SIGNAL_G_CASINO_NEWS_WIDERSPRUCH:
+         if(logic_signal == 0) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: Casino-Logic neutral");
+            return 0;
+         }
+         if(news_available && news_signal != 0 && news_signal != logic_signal) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: News widersprechen Casino (Logic=" + IntegerToString(logic_signal) + ", News=" + IntegerToString(news_signal) + ")");
+            return 0;
+         }
+         direction = logic_signal;
+         break;
+
+      case SIGNAL_H_CASINO_NEWS_IGNORE:
+         if(logic_signal == 0) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: Casino-Logic neutral");
             return 0;
          }
          direction = logic_signal;
@@ -2555,7 +3244,7 @@ void ExportMultiTimeframes() {
 
 // Initialisierung
 int OnInit() {
-   Print("===== SHARROW v6.0 Initialisierung - SYMBOL SHOWCASE =====");
+   Print("===== GOLDJUNGE v6.0 Initialisierung - SYMBOL SHOWCASE =====");
    ENUM_TIMEFRAMES tf = Period();
 
    // 🚀 NEUE FUNKTION: Lade optimierte Parameter
@@ -2610,7 +3299,9 @@ int OnInit() {
    news_check_interval_seconds = NewsCheckInterval * 60;
    
    LoadRules(tf);
-   
+
+   UpdateBreakEvenAnchor();
+
    // === NEWS-CLOSING KONFIGURATION ===
    news_closing_enabled = NewsClosingEnabled;
    Print("News-Closing System: ", (news_closing_enabled ? "AKTIVIERT" : "DEAKTIVIERT"));
@@ -2639,7 +3330,7 @@ int OnInit() {
       Print("❌ FEHLER: Timer konnte nicht initialisiert werden!");
       return(INIT_FAILED);
    }
-   Print("✅ SHARROW: Timer erfolgreich auf 60 Sekunden gesetzt!");
+   Print("✅ GOLDJUNGE: Timer erfolgreich auf 60 Sekunden gesetzt!");
    
    m_close_prices_m1.Delta(0.0001);
    m_close_prices_m15.Delta(0.0001);
@@ -2655,7 +3346,7 @@ int OnInit() {
    m_poisson_values.Reserve(Lookback_Period * 2);
    m_exponential_values.Reserve(Lookback_Period * 2);
    
-   Print("❤️ SHARROW — Institutional Precision v6.0 - AUTOMATIC NEWS SYSTEM");
+   Print("❤️ GOLDJUNGE für Hasi's MILLIARDEN! 💸 v6.0 - AUTOMATIC NEWS SYSTEM");
    string asset_type = GetAssetType(_Symbol);
    Print("- Symbol: ", _Symbol, " (", asset_type, "), PipSize: ", DoubleToString(g_pip_size, 8));
    // Asset-Type automatisch bestimmen für Log
@@ -2664,6 +3355,18 @@ int OnInit() {
    Print("- Quality Filter: ADX>", DoubleToString(ADX_Min, 0), " (stark>", DoubleToString(ADX_Strong_Min, 0), "), Stoch Buy<", DoubleToString(Quality_Stoch_Buy_Max, 0), ", Sell>", DoubleToString(Quality_Stoch_Sell_Min, 0), ", Vol>", DoubleToString(Quality_Volume_Min, 0));
    Print("- Rules System: ", (RulesIntegration ? "VOLLSTÄNDIG AKTIV (3 Regeln)" : "TEILWEISE AKTIV (nur TP/SL/Lot)"), " (rules_", _Symbol, ".txt)");
    Print("- BreakRevert: Breakout>", DoubleToString(Breakout_Threshold, 2), ", MeanReversion<", DoubleToString(Mean_Reversion_Threshold, 2));
+   if(CasinoModeEnabled)
+   {
+      if(UpdateCasinoStats(true))
+      {
+         Print("- Casino Dyn Trigger: ratio>", DoubleToString(g_casino_stats.ratio_trigger, 2),
+               " | churn>", DoubleToString(g_casino_stats.churn_trigger, 2));
+      }
+      else
+      {
+         Print("- Casino Dyn Trigger: noch keine Ausgangswerte (Daten werden gesammelt)");
+      }
+   }
    Print("- Trading: NUR auf H1 erlaubt, aktuell: ", is_h1_timeframe ? "OK" : "WARNUNG");
    Print("- Gap Protection: ", GapProtection ? "OK (aktiv)" : "WARNUNG (deaktiviert)", ", Stop: ", StopHoursBeforeClose, "h vor Schluss, Min Gap: ", MinGapHours, "h");
    string night_start = StringFormat("%02d:00", (int)NightStopStartHour);
@@ -2681,12 +3384,12 @@ int OnInit() {
 
 // Timer (VOLLSTÄNDIGER Export, kein Import mehr bei Timeframe-Wechsel)
 void OnTimer() {
-   if(EnableDebug) Print("🔍 SHARROW TIMER CALLED at ", TimeToString(TimeLocal(), TIME_DATE|TIME_MINUTES|TIME_SECONDS));
+   if(EnableDebug) Print("🔍 GOLDJUNGE TIMER CALLED at ", TimeToString(TimeLocal(), TIME_DATE|TIME_MINUTES|TIME_SECONDS));
    ENUM_TIMEFRAMES tf = Period();
    datetime now = TimeLocal();  // RECHNERZEIT verwenden!
    MqlDateTime time_struct;
    TimeToStruct(now, time_struct);
-   if(EnableDebug) Print("🔍 DEBUG SHARROW: Verwende RECHNERZEIT - ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
+   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Verwende RECHNERZEIT - ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
    
    int day_of_week = time_struct.day_of_week;
    // FIX: Korrekte Berechnung - Montag=0, Dienstag=1, ... Sonntag=6
@@ -2694,8 +3397,8 @@ void OnTimer() {
 
    // ===== EXPORT LOGIC - SMART RHYTHM ANALYZER =====
    bool export_triggered = false;
-   if(EnableDebug) Print("🔍 DEBUG SHARROW: Timer reached export logic at ", TimeToString(now, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
-   if(EnableDebug) Print("🔍 DEBUG SHARROW: Checking export - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
+   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Timer reached export logic at ", TimeToString(now, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
+   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Checking export - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
    
    // Monatlicher Export-Tag hat Priorität
    if(ExportMonthDay != MONTH_DAY_OFF && time_struct.day == ExportMonthDay && 
@@ -2716,8 +3419,8 @@ void OnTimer() {
    bool export_already_done_today = (today_date == last_export_date_str);
    
    if(EnableDebug) {
-      Print("🔍 DEBUG SHARROW: Export triggered: ", export_triggered ? "YES" : "NO");
-      Print("🔍 DEBUG SHARROW: Today: ", today_date, ", LastExport: ", last_export_date_str, ", AlreadyDone: ", export_already_done_today ? "YES" : "NO");
+       Print("🔍 DEBUG GOLDJUNGE: Export triggered: ", export_triggered ? "YES" : "NO");
+       Print("🔍 DEBUG GOLDJUNGE: Today: ", today_date, ", LastExport: ", last_export_date_str, ", AlreadyDone: ", export_already_done_today ? "YES" : "NO");
        // Export Debug Info
        bool rhythm_trigger = IsRhythmTriggerToday(ExportInterval, days_since_monday);
        int current_time_minutes = time_struct.hour * 60 + time_struct.min;
@@ -2925,8 +3628,10 @@ bool IsMarketSafeForNewTrades() {
    return true;  // Sicher zu traden
 }
 
-// ===== HAUPTLOGIK - SHARROW v6.0 =====
+// ===== HAUPTLOGIK - GOLDJUNGE v6.0 =====
 void OnTick() {
+   UpdateBreakEvenAnchor();
+
    // === TRADEACTIVE CHECK - VOLLAUTOMATISCHE KONTROLLE ===
    if(!global_trade_active) {
       // Trading deaktiviert - Ressourcen schonen, keine Berichte, völlig inaktiv
@@ -2939,6 +3644,18 @@ void OnTick() {
       return;
    }
    
+   bool night_stop_now = NightStopEnabled && IsNightStopActive();
+   if(night_stop_now)
+   {
+      if(!g_night_stop_notice_sent)
+      {
+         StateLog("NIGHT_STOP", "Night-Stop aktiv – keine Aktionen");
+         g_night_stop_notice_sent = true;
+      }
+      return;
+   }
+   g_night_stop_notice_sent = false;
+
    // === NEWS-FLIP DETECTION - Überwachung laufender Trades ===
    CloseTradeOnNewsFlip();
    SyncLastDeal();
@@ -2982,12 +3699,90 @@ void OnTick() {
    if(g_optimized_params.parameters_loaded)
       rule_signal = raw_logic_signal;
    double rule_win_rate = global_win_rate;
+
+   double threshold_adx = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
+   double threshold_stoch_buy = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
+   double threshold_stoch_sell = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_sell_min : Quality_Stoch_Sell_Min;
+   double threshold_volume = g_optimized_params.parameters_loaded ? g_optimized_params.volume_min : Quality_Volume_Min;
+
+   int casino_direction = 0;
+   double casino_ratio = 0.0;
+   double casino_median = 0.0;
+   string casino_reason = "";
+   bool casino_trigger = DetectCasinoSignal(g_last_atr_value, casino_direction, casino_ratio, casino_median, casino_reason);
+
+   if(casino_trigger)
+   {
+      if(adx_current < threshold_adx)
+      {
+         casino_trigger = false;
+         casino_reason = StringFormat("ADX %.1f < %.1f", adx_current, threshold_adx);
+      }
+      else if(volume_current < threshold_volume)
+      {
+         casino_trigger = false;
+         casino_reason = StringFormat("Vol %.0f < %.0f", volume_current, threshold_volume);
+      }
+      else if(casino_direction == 1 && stoch_current >= threshold_stoch_buy)
+      {
+         casino_trigger = false;
+         casino_reason = StringFormat("Stoch %.1f >= BuyMax %.1f", stoch_current, threshold_stoch_buy);
+      }
+      else if(casino_direction == -1 && stoch_current <= threshold_stoch_sell)
+      {
+         casino_trigger = false;
+         casino_reason = StringFormat("Stoch %.1f <= SellMin %.1f", stoch_current, threshold_stoch_sell);
+      }
+   }
+
+   // Casino State Tracking & Signal Override
+   if(casino_trigger)
+   {
+      if(!g_casino_active || g_casino_direction != casino_direction)
+      {
+         StateLog("CASINO_ON", StringFormat("dir=%s ratio=%.2f/%.2f churn=%.2f/%.2f median=%.5f info=%s",
+                                            casino_direction > 0 ? "BUY" : "SELL",
+                                            casino_ratio,
+                                            g_casino_stats.ratio_trigger,
+                                            g_casino_stats.churn_current,
+                                            g_casino_stats.churn_trigger,
+                                            casino_median,
+                                            casino_reason));
+      }
+      g_casino_active = true;
+      g_casino_direction = casino_direction;
+      g_casino_ratio = casino_ratio;
+      g_casino_median = casino_median;
+      g_casino_last_reason = casino_reason;
+      raw_logic_signal = casino_direction;
+      rule_signal = g_optimized_params.parameters_loaded ? raw_logic_signal : 0;
+   }
+   else
+   {
+      if(g_casino_active)
+      {
+         StateLog("CASINO_OFF", StringFormat("ratio=%.2f/%.2f churn=%.2f/%.2f info=%s",
+                                              casino_ratio,
+                                              g_casino_stats.ratio_trigger,
+                                              g_casino_stats.churn_current,
+                                              g_casino_stats.churn_trigger,
+                                              casino_reason));
+      }
+      g_casino_active = false;
+      g_casino_direction = 0;
+      g_casino_ratio = casino_ratio;
+      g_casino_median = casino_median;
+      g_casino_last_reason = casino_reason;
+   }
    
    // ===== ADX STRENGTH BESTIMMEN =====
    string adx_strength = adx_current >= ADX_Strong_Min ? "strong" : adx_current >= ADX_Min ? "weak" : "very weak";
+   ENUM_SIGNAL_MODE effective_mode = SignalMode;
+   if(g_casino_active && effective_mode != SIGNAL_D_LOGIC_NEWS_STRIKT && effective_mode != SIGNAL_E_LOGIC_NEWS_SCHUTZ)
+      effective_mode = SIGNAL_E_LOGIC_NEWS_SCHUTZ;
    
    // ===== FINALE ENTSCHEIDUNG - 3-REGEL-SYSTEM =====
-   int final_signal = GetFinalSignal(rule_signal, raw_logic_signal, news_signal, rule_win_rate, adx_strength);
+   int final_signal = GetFinalSignal(rule_signal, raw_logic_signal, news_signal, rule_win_rate, adx_strength, effective_mode);
    
    // ===== TP/SL BERECHNUNG =====
    double tp_atr = (global_tp_atr > 0) ? global_tp_atr : GetTPMultiplier(FixedTP);
@@ -3108,11 +3903,6 @@ void OnTick() {
    
    // ===== ÜBERARBEITETE BERICHTE - NEUE STRUKTUR =====
 
-   double threshold_adx = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
-   double threshold_stoch_buy = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
-   double threshold_stoch_sell = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_sell_min : Quality_Stoch_Sell_Min;
-   double threshold_volume = g_optimized_params.parameters_loaded ? g_optimized_params.volume_min : Quality_Volume_Min;
-
    // 1. Bot Status (mit Asset-Type & TP/SL)
    string news_type = GetAssetType(_Symbol);
    string lot_source = global_lot_size > 0 ? "Rules Lot" : FixedLot > 0 ? "Fester Lot" : "Risiko Lot";
@@ -3192,8 +3982,18 @@ void OnTick() {
    string final_bot_status = GetBotStatus();
 
    string signals_line = "News " + FormatNewsSignalLine(news_signal) + " | " + signalregel;
+   if(CasinoModeEnabled && is_h1_timeframe)
+   {
+      double ratio_trig_display = (g_casino_stats.ratio_trigger > 0.0) ? g_casino_stats.ratio_trigger : 0.0;
+      double churn_trig_display = (g_casino_stats.churn_trigger > 0.0) ? g_casino_stats.churn_trigger : 0.0;
+      double churn_curr_display = g_casino_stats.churn_current;
+      string casino_status = g_casino_active
+         ? StringFormat(" | Casino ON r=%.2f/%.2f c=%.2f/%.2f", g_casino_ratio, ratio_trig_display, churn_curr_display, churn_trig_display)
+         : StringFormat(" | Casino OFF r=%.2f/%.2f c=%.2f/%.2f", g_casino_ratio, ratio_trig_display, churn_curr_display, churn_trig_display);
+      signals_line += casino_status;
+   }
 
-   Print("===== SHARROW v5.0 BERICHT =====");
+   Print("===== GOLDJUNGE v5.0 BERICHT =====");
    string bot_line = "Bot: " + _Symbol + " " + tf_str + " | Lot " + DoubleToString(lot, 2) + " (" + lot_source + ", " + DoubleToString(actual_lot_value, 0) + " " + account_currency + ") | " + tpsl_info + " | " + news_type;
    if(account_too_small) bot_line += " | KONTO ZU KLEIN";
    Print(bot_line);
@@ -3228,7 +4028,7 @@ void OnTick() {
          if((pos_type == POSITION_TYPE_BUY && pos_sl >= pos_entry && sl_diff <= be_threshold) ||
             (pos_type == POSITION_TYPE_SELL && pos_sl <= pos_entry && sl_diff <= be_threshold))
          {
-            sl_flag = " (BE)";
+            sl_flag = " (BREAK-EVEN)";
          }
       }
 
@@ -3310,13 +4110,6 @@ void OnTick() {
    }
 
    if((EnableTrading || global_trade_active)) {
-      if(IsNightStopActive()) {
-         if(EnableDebug)
-            Print("NIGHT-STOP AKTIV: Blockiere neue Trades zwischen 22:00 und 06:00 Serverzeit");
-         StateLog("NIGHT_STOP", "Keine Trades zwischen 22:00 und 06:00 Serverzeit");
-         return;
-      }
-
       // KRITISCHER SICHERHEITSCHECK: Konto zu klein für Symbol?
       if(account_too_small) {
          Print("TRADING BLOCKIERT: Konto zu klein für ", _Symbol, " - Min-Lot würde Risiko-Budget um >50% übersteigen!");
@@ -3374,34 +4167,30 @@ void OnTick() {
       
       if(final_signal == 1) {
          double tp_for_order = tp_price;
-         if(trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 BUY (H1)")) {
-         Print("SHARROW BUY ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
-               ", TP=", DoubleToString(tp_price, 5), ", SL=", DoubleToString(sl_price, 5));
-         Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
-               ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
+         AdjustStopsForBroker(true, market_price, sl_price, tp_for_order);
 
-         // === NEWS-SENTIMENT BEIM TRADE-START SPEICHERN ===
-         trade_entry_sentiment = GetNewsSignal();
-         trade_entry_time = TimeCurrent();
-         Print("NEWS-SENTIMENT gespeichert: ", 
-               (trade_entry_sentiment == 1 ? "BULLISH" : trade_entry_sentiment == -1 ? "BEARISH" : "NEUTRAL"),
-               " für BUY-Trade");
-         StateLog("ORDER_SEND", StringFormat("BUY lot=%.4f price=%.5f tp=%.5f sl=%.5f reason=%s",
-                                             lot,
-                                             market_price,
-                                             tp_price,
-                                             sl_price,
-                                             trade_reason));
-      } else {
+         bool order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 BUY (H1)");
+         if(!order_success) {
             int error_code = GetLastError();
-            if(EnableDebug) {
+            bool invalid_stops = (trade.ResultRetcode() == TRADE_RETCODE_INVALID_STOPS) || (error_code == 130);
+            if(invalid_stops) {
+               ResetLastError();
+               double retry_price = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
+               if(retry_price > 0.0)
+                  market_price = retry_price;
+               AdjustStopsForBroker(true, market_price, sl_price, tp_for_order);
+               order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 BUY (H1)");
+               error_code = GetLastError();
+            }
+
+            if(!order_success && EnableDebug) {
                Print("ORDER FAIL BUY: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
                      ", LastError=", error_code,
                      ", Lot=", DoubleToString(lot, 4),
                      ", Price=", DoubleToString(market_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)),
                      ", SL=", DoubleToString(sl_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)),
-                     ", TP=", DoubleToString(tp_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)));
-               Print("KEIN RETRY: Lot ", DoubleToString(lot, 4), " wird EXAKT eingehalten!");
+                     ", TP=", DoubleToString(tp_for_order, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)));
+               Print("LOT CHECK: Lot ", DoubleToString(lot, 4), " bleibt unverändert (kein Auto-Scaling)!");
                bool not_enough_money = (trade.ResultRetcode() == TRADE_RETCODE_NO_MONEY) || (error_code == 134);
                if(not_enough_money) {
                   Print("Grund: NICHT GENUG GELD für Lot ", DoubleToString(lot, 4));
@@ -3411,36 +4200,52 @@ void OnTick() {
                }
             }
          }
+
+         if(order_success) {
+            Print("GOLDJUNGE BUY ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
+                  ", TP=", DoubleToString(tp_for_order, 5), ", SL=", DoubleToString(sl_price, 5));
+            Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
+                  ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
+
+            // === NEWS-SENTIMENT BEIM TRADE-START SPEICHERN ===
+            trade_entry_sentiment = GetNewsSignal();
+            trade_entry_time = TimeCurrent();
+            Print("NEWS-SENTIMENT gespeichert: ", 
+                  (trade_entry_sentiment == 1 ? "BULLISH" : trade_entry_sentiment == -1 ? "BEARISH" : "NEUTRAL"),
+                  " für BUY-Trade");
+            StateLog("ORDER_SEND", StringFormat("BUY lot=%.4f price=%.5f tp=%.5f sl=%.5f reason=%s",
+                                                lot,
+                                                market_price,
+                                                tp_for_order,
+                                                sl_price,
+                                                trade_reason));
+            UpdateBreakEvenAnchor();
+         }
       } else {
          double tp_for_order = tp_price;
-         if(trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 SELL (H1)")) {
-         Print("SHARROW SELL ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
-               ", TP=", DoubleToString(tp_price, 5), ", SL=", DoubleToString(sl_price, 5));
-         Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
-               ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
-
-         // === NEWS-SENTIMENT BEIM TRADE-START SPEICHERN ===
-         trade_entry_sentiment = GetNewsSignal();
-         trade_entry_time = TimeCurrent();
-         Print("NEWS-SENTIMENT gespeichert: ", 
-               (trade_entry_sentiment == 1 ? "BULLISH" : trade_entry_sentiment == -1 ? "BEARISH" : "NEUTRAL"),
-               " für SELL-Trade");
-         StateLog("ORDER_SEND", StringFormat("SELL lot=%.4f price=%.5f tp=%.5f sl=%.5f reason=%s",
-                                              lot,
-                                              market_price,
-                                              tp_price,
-                                              sl_price,
-                                              trade_reason));
-      } else {
+         AdjustStopsForBroker(false, market_price, sl_price, tp_for_order);
+         bool order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 SELL (H1)");
+         if(!order_success) {
             int error_code = GetLastError();
-            if(EnableDebug) {
+            bool invalid_stops = (trade.ResultRetcode() == TRADE_RETCODE_INVALID_STOPS) || (error_code == 130);
+            if(invalid_stops) {
+               ResetLastError();
+               double retry_price = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+               if(retry_price > 0.0)
+                  market_price = retry_price;
+               AdjustStopsForBroker(false, market_price, sl_price, tp_for_order);
+               order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 SELL (H1)");
+               error_code = GetLastError();
+            }
+
+            if(!order_success && EnableDebug) {
                Print("ORDER FAIL SELL: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
                      ", LastError=", error_code,
                      ", Lot=", DoubleToString(lot, 4),
                      ", Price=", DoubleToString(market_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)),
                      ", SL=", DoubleToString(sl_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)),
-                     ", TP=", DoubleToString(tp_price, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)));
-               Print("KEIN RETRY: Lot ", DoubleToString(lot, 4), " wird EXAKT eingehalten!");
+                     ", TP=", DoubleToString(tp_for_order, (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS)));
+               Print("LOT CHECK: Lot ", DoubleToString(lot, 4), " bleibt unverändert (kein Auto-Scaling)!");
                bool not_enough_money = (trade.ResultRetcode() == TRADE_RETCODE_NO_MONEY) || (error_code == 134);
                if(not_enough_money) {
                   Print("Grund: NICHT GENUG GELD für Lot ", DoubleToString(lot, 4));
@@ -3449,6 +4254,27 @@ void OnTick() {
                   Print("Grund: Ungültige Lotgröße für Symbol (Error 131)");
                }
             }
+         }
+
+         if(order_success) {
+            Print("GOLDJUNGE SELL ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
+                  ", TP=", DoubleToString(tp_for_order, 5), ", SL=", DoubleToString(sl_price, 5));
+            Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
+                  ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
+
+            // === NEWS-SENTIMENT BEIM TRADE-START SPEICHERN ===
+            trade_entry_sentiment = GetNewsSignal();
+            trade_entry_time = TimeCurrent();
+            Print("NEWS-SENTIMENT gespeichert: ", 
+                  (trade_entry_sentiment == 1 ? "BULLISH" : trade_entry_sentiment == -1 ? "BEARISH" : "NEUTRAL"),
+                  " für SELL-Trade");
+            StateLog("ORDER_SEND", StringFormat("SELL lot=%.4f price=%.5f tp=%.5f sl=%.5f reason=%s",
+                                                 lot,
+                                                 market_price,
+                                                 tp_for_order,
+                                                 sl_price,
+                                                 trade_reason));
+            UpdateBreakEvenAnchor();
          }
       }
    }
@@ -3463,7 +4289,7 @@ void OnDeinit(const int reason) {
    
    // Quality Filter Statistiken ausgeben (Counter für interne Verwendung)
    if(quality_signals_total > 0) {
-      Print("===== SHARROW v6.0 FINAL STATISTICS (DEBUG) =====");
+      Print("===== GOLDJUNGE v6.0 FINAL STATISTICS (DEBUG) =====");
       Print("Quality Filter Performance (Internal Counters):");
       Print("- Total BreakRevert Signals: ", IntegerToString(quality_signals_total));
       Print("- Passed Quality Filter: ", IntegerToString(quality_signals_passed), " (", DoubleToString((double)quality_signals_passed/quality_signals_total*100, 1), "%)");
@@ -3474,6 +4300,6 @@ void OnDeinit(const int reason) {
       Print("- News Boost Confirms: ", IntegerToString(quality_bonus_confirms));
       Print("===== Bot gestoppt, VOLLSTÄNDIGER Export Fix funktioniert! =====");
    } else {
-      Print("===== SHARROW v6.0 gestoppt =====");
+      Print("===== GOLDJUNGE v6.0 gestoppt =====");
    }
 }
