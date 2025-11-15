@@ -1,4 +1,4 @@
-# 🏹 Sharrow Trading System v1.0 BETA
+# 🏹 Sharrow Trading System v1.1 BETA
 
 <p align="center">
   <img src="sharrow-logo.png" alt="Sharrow Logo" width="200" />
