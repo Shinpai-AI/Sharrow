@@ -1,4 +1,4 @@
-# 🏹 Sharrow Trading System v1.1 BETA
+# 🏹 Sharrow Trading System v1.5 BETA
 
 <p align="center">
   <img src="sharrow-logo.png" alt="Sharrow Logo" width="200" />
@@ -16,6 +16,7 @@ Sharrow ist die Nachfolger-Version eines internen Forschungsprojekts und vereint
 - **Python Toolchain** für Training, News-Import und Datenaufbereitung
 - **Mehrstufige Risikokontrolle** inklusive Margin-Guard, 1-Trade-Policy & Weekend-Gate
 - **News-basierte Trade-Gates** mit Sentiment-Analyse
+- **🎰 Casino-Engine (v1.5)** mit erweiterten Signalquellen (Modi F-H) & dynamischer Signal-Logik
 
 Alle personenbezogenen Hinweise wurden entfernt; Branding und Credits zeigen auf **Shinpai-AI (Publisher)** und **GPT‑5 (Coder)**.
 
@@ -29,6 +30,7 @@ Sharrow/
 │   ├── Sharrow.mq5             # MT5 Expert Advisor
 │   ├── SharrowReport.mq5       # Reporting / Dashboard EA
 │   ├── Sharrow-Fibel.md        # Architektur- & Referenzdokument (DE)
+│   ├── Sharrow-Casino.md       # 🎰 Casino-Modus Dokumentation (v1.5)
 │   ├── Sharrow-Ersteinrichtung.md
 │   ├── Train-KI-Bot.py         # ML-Training & Rules-Generator
 │   ├── TKB-News-Bot.py         # News-Collector & Sentiment-Filter
@@ -41,6 +43,7 @@ Sharrow/
 │   ├── Sharrow.mq5             # MT5 Expert Advisor
 │   ├── SharrowReport.mq5
 │   ├── Sharrow-Fibel.md
+│   ├── Sharrow-Casino.md       # 🎰 Casino-Modus Dokumentation (v1.5)
 │   ├── Sharrow-Ersteinrichtung.md
 │   ├── Train-KI-Bot.py
 │   ├── TKB-News-Bot.py
@@ -195,6 +198,6 @@ Pull Requests sind derzeit geschlossen; Bugreports, Verbesserungsvorschläge und
 
 ---
 
-**Letztes Update:** Oktober 2025
+**Letztes Update:** November 2025 (v1.5 Casino-Release)
 
 *Made with ❤️ by Shinpai-AI & GPT‑5.*
