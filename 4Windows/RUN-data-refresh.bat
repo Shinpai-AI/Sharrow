@@ -29,7 +29,7 @@ call :config_path paths.python_bin PYTHON_BIN
 if not defined PYTHON_BIN set "PYTHON_BIN=python"
 set "DATA_EXPORT_SCRIPT=%SCRIPT_DIR%\TKB-Data-Export.py"
 
-call :log "=== GOLDJUNGE MONTHLY DATA REFRESH START ==="
+call :log "=== SHARROW MONTHLY DATA REFRESH START ==="
 call :log "Arbeitsverzeichnis: %SCRIPT_DIR%"
 call :log "MT5 Pfad: %MT5_PATH%"
 call :log "MT5 Files: %MQL5_FILES%"
@@ -39,7 +39,7 @@ call :delete_old_csv
 call :copy_extend_files
 call :run_data_export
 call :analyze_new_csv
-call :log "=== GOLDJUNGE DATA REFRESH COMPLETE ==="
+call :log "=== SHARROW DATA REFRESH COMPLETE ==="
 exit /b 0
 
 :delete_old_csv

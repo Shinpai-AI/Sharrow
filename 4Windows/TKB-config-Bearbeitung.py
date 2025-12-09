@@ -133,6 +133,7 @@ def build_symbol_entry(symbol: str, asset_type: str = "FOREX", **overrides):
     asset_type_up = normalize_asset_type(asset_type)
     base_currency, quote_currency = split_symbol(symbol)
     pip_size = 0.01 if "JPY" in symbol.upper() else 0.0001
+    tp_preset_override = overrides.pop("tp_settings", None) if "tp_settings" in overrides else None
     payload = {
         "pip_size": pip_size,
         "min_lot": 0.01,
@@ -142,6 +143,10 @@ def build_symbol_entry(symbol: str, asset_type: str = "FOREX", **overrides):
         "base_currency": base_currency,
         "contract_size": 100000,
         "asset_type": asset_type_up,
+        "tp_settings": tp_preset_override or {
+            "atr_multiplier": 1.0,
+            "swing": False,
+        },
     }
     payload.update({k: v for k, v in overrides.items() if v is not None})
     payload["asset_type"] = normalize_asset_type(payload.get("asset_type", asset_type_up))
@@ -159,6 +164,32 @@ def iter_symbol_configs(symbols_block):
 def list_config_symbols(config):
     symbols_block = config.get("symbols", {}) if isinstance(config, dict) else {}
     return [symbol for symbol, _ in iter_symbol_configs(symbols_block)]
+
+
+def ensure_tp_settings(cfg: dict) -> int:
+    symbols = cfg.get("symbols", {}) if isinstance(cfg, dict) else {}
+    changed = 0
+    for sym, sym_cfg in iter_symbol_configs(symbols):
+        if not isinstance(sym_cfg, dict):
+            continue
+        block = sym_cfg.get("tp_settings")
+        if not isinstance(block, dict):
+            sym_cfg["tp_settings"] = {
+                "atr_multiplier": 1.0,
+                "swing": False,
+            }
+            changed += 1
+        else:
+            updated = False
+            if "atr_multiplier" not in block:
+                block["atr_multiplier"] = 1.0
+                updated = True
+            if "swing" not in block:
+                block["swing"] = False
+                updated = True
+            if updated:
+                changed += 1
+    return changed
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'TKB-config.json')
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'TKB.log')
@@ -186,7 +217,7 @@ def load(path=CONFIG_PATH):
 
 def default_config():
     return {
-        "project": {"name": "Sharrow (Shinpai-AI)", "version": "3.0"},
+        "project": {"name": "Sharrow AI Trader", "version": "1.5"},
         "paths": {
             "mt5_path": "/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5",
             "mt5_files_subpath": "MQL5/Files",
@@ -338,6 +369,7 @@ def main():
     ap.add_argument('--add-symbol')
     ap.add_argument('--remove-symbol')
     ap.add_argument('--update-news-triggers', action='store_true')
+    ap.add_argument('--ensure-tp-settings', action='store_true')
     ap.add_argument('--summary', action='store_true')
     args = ap.parse_args()
 
@@ -403,6 +435,12 @@ def main():
             updated_count += 1
         save(cfg)
         log_msg(f"[OK] News-Trigger aktualisiert für {updated_count} Symbole (Sharrow-Style)")
+
+    if args.ensure_tp_settings:
+        count = ensure_tp_settings(cfg)
+        if count > 0:
+            save(cfg)
+        log_msg(f"[OK] TP-Settings geprüft/ergänzt für {count} Symbole")
 
     if args.summary:
         summary = json.dumps({

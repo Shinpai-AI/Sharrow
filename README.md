@@ -18,7 +18,7 @@ Sharrow ist die Nachfolger-Version eines internen Forschungsprojekts und vereint
 - **News-basierte Trade-Gates** mit Sentiment-Analyse
 - **🎰 Casino-Engine (v1.5)** mit erweiterten Signalquellen (Modi F-H) & dynamischer Signal-Logik
 
-Alle personenbezogenen Hinweise wurden entfernt; Branding und Credits zeigen auf **Shinpai-AI (Publisher)** und **GPT‑5 (Coder)**.
+Alle personenbezogenen Hinweise wurden entfernt; Branding und Credits zeigen auf **Shinpai-AI (Publisher, Hannes Kell)** und **GPT‑5 (Coder)**.
 
 ---
 
@@ -52,8 +52,6 @@ Sharrow/
 │   └── RUN-*.bat               # Automation Scripts (Batch)
 │
 ├── sharrow-logo.png            # Logo (png)
-├── 4Unix.tar.gz                # Vorbereitete Release-Datei (optional)
-├── 4Windows.tar.gz             # Vorbereitete Release-Datei (optional)
 └── README.md
 ```
 
@@ -84,9 +82,9 @@ Arbeite **innerhalb des passenden OS-Pakets**:
     "python_bin": "python"               // "python3" auf Linux/Mac
   },
   "api_settings": {
-    "polygon":   {"enabled": true,  "api_key": ""},
-    "forexnews": {"enabled": true,  "api_key": ""},
-    "cryptonews":{"enabled": true,  "api_key": ""}
+    "polygon":   {"enabled": false, "api_key": ""},
+    "forexnews": {"enabled": false, "api_key": ""},
+    "cryptonews":{"enabled": false, "api_key": ""}
   },
   "telegram": {
     "enabled": false,
@@ -176,7 +174,7 @@ Automatisierung über cron (Linux) oder Task Scheduler (Windows) wird empfohlen.
 
 ## 🧠 Credits
 
-- **Publisher:** Shinpai-AI (Shinpai)
+- **Publisher:** Shinpai-AI / Hannes Kell
 - **Coder:** GPT-5 (OpenAI)
 - **Stack:** MetaTrader 5 (MQL5), Python 3.x, REST APIs (Polygon.io, ForexNewsAPI, CryptoNewsAPI)
 
@@ -192,7 +190,9 @@ Dieses Projekt stellt keinen Anlage- oder Finanzrat dar. Handel an Finanzmärkte
 
 ## 📬 Support & Feedback
 
-🗨️ Issues & Feature Requests: [GitHub Issues](https://github.com/Shinpai-AI/Sharrow/issues)
+- 🗨️ Issues & Feature Requests: [GitHub Issues](https://github.com/Shinpai-AI/Sharrow/issues)
+- 🌐 Website: [shinpai.de](https://shinpai.de)
+- 📧 Kontakt: info@shinpai.de
 
 Pull Requests sind derzeit geschlossen; Bugreports, Verbesserungsvorschläge und Dokumentationsbeiträge sind jedoch willkommen.
 

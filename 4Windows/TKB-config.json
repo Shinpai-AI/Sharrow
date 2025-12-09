@@ -1,7 +1,7 @@
 {
   "project": {
-    "name": "Sharrow (Shinpai-AI)",
-    "version": "3.0"
+    "name": "Sharrow AI Trader",
+    "version": "1.5"
   },
   "paths": {
     "mt5_path": "C:/Program Files/MetaTrader 5",
@@ -23,12 +23,13 @@
       "api_key": "",
       "plan": "free",
       "rate_limit": 5,
-      "max_results_per_call": 20000
+      "max_results_per_call": 20000,
+      "enabled": false
     },
     "forexnews": {
       "api_key": "",
       "base_url": "https://forexnewsapi.com/api/v1",
-      "enabled": true,
+      "enabled": false,
       "plan": "trial",
       "rate_limit": 3,
       "request_delay": 1.0,
@@ -38,7 +39,7 @@
     "cryptonews": {
       "api_key": "",
       "base_url": "https://cryptonews-api.com/api/v1",
-      "enabled": true,
+      "enabled": false,
       "plan": "trial",
       "rate_limit": 3,
       "request_delay": 1.0,
@@ -76,11 +77,32 @@
     "volume_method": "percentile",
     "volume_percentile": 0.6,
     "volume_sma_factor_min": 1.0,
-    "objective": "ev"
+    "objective": "ev",
+    "rule_threshold": 0.45,
+    "buy_sell_split": false,
+    "use_ea_simulation": false
+  },
+  "quality_defaults": {
+    "adx_min": 25.0,
+    "stoch_buy_max": 30.0,
+    "stoch_sell_min": 70.0,
+    "volume_min": 1000.0
+  },
+  "quality": {
+    "min_calibration_trades": 30,
+    "min_calibration_winrate": 0.5,
+    "adx_floor": 10.0,
+    "adx_cap": 35.0,
+    "stoch_buy_floor": 5.0,
+    "stoch_buy_cap": 85.0,
+    "stoch_sell_floor": 25.0,
+    "stoch_sell_cap": 90.0,
+    "volume_floor": 400.0,
+    "volume_cap": 15000.0
   },
   "rules": {
-    "min_winrate": 0.7,
-    "min_trades": 150
+    "min_winrate": 0.45,
+    "min_trades": 40
   },
   "data_export": {
     "lookback_years": 2,
@@ -92,62 +114,62 @@
     "polygon_cutoff_days": 45
   },
   "telegram": {
-    "telegram_description": "Sharrow Trading Bot",
+    "telegram_description": "Sharrow Alerts",
     "enabled": false,
     "bot_token": "",
     "chat_id": "",
-    "send_summary": true,
-    "send_errors": true,
+    "send_summary": false,
+    "send_errors": false,
     "message_format": "markdown",
     "max_message_length": 4096
   },
   "exchange_rates": {
-    "EUR/USD": 1.16248,
-    "USD/EUR": 0.860229853416833,
-    "EUR/JPY": 175.7595,
-    "JPY/EUR": 0.005689592881181387,
-    "EUR/GBP": 0.87051,
-    "GBP/EUR": 1.1487518810812052,
-    "EUR/CHF": 0.92966,
-    "CHF/EUR": 1.0756620700040875,
+    "EUR/USD": 1.16241,
+    "USD/EUR": 0.8602816562142446,
+    "EUR/JPY": 180.4945,
+    "JPY/EUR": 0.0055403350240589054,
+    "EUR/GBP": 0.87867,
+    "GBP/EUR": 1.1380836946749064,
+    "EUR/CHF": 0.93385,
+    "CHF/EUR": 1.0708357873320127,
     "EUR/AUD": 1.6,
     "AUD/EUR": 0.625,
     "EUR/NZD": 1.78,
     "NZD/EUR": 0.5617978,
-    "EUR/CAD": 1.62783,
-    "CAD/EUR": 0.61431476259806,
-    "GBP/USD": 1.33549,
-    "USD/GBP": 0.7487888340609065,
-    "USD/CAD": 1.40037,
-    "CAD/USD": 0.7140969886529989,
-    "AUD/USD": 0.64775,
-    "USD/AUD": 1.5438054805094557,
-    "NZD/USD": 0.57218,
-    "USD/NZD": 1.7477017721695969,
-    "USD/CHF": 0.79971,
-    "CHF/USD": 1.2504532893173774,
-    "AUD/CHF": 0.51801,
-    "CHF/AUD": 1.9304646628443467,
-    "GBP/CHF": 1.06797,
-    "CHF/GBP": 0.9363558901467269,
-    "CAD/CHF": 0.57112,
-    "CHF/CAD": 1.750945510575711,
-    "GBP/CAD": 1.87019,
-    "CAD/GBP": 0.534705029970217,
-    "NZD/CHF": 0.45756,
-    "CHF/NZD": 2.185505726025002,
-    "USD/JPY": 151.185,
-    "JPY/USD": 0.006614412805503191,
-    "GBP/JPY": 201.896,
-    "JPY/GBP": 0.004953045132147244,
-    "AUD/JPY": 97.933,
-    "JPY/AUD": 0.010211062665291577,
-    "CHF/JPY": 189.077,
-    "JPY/CHF": 0.00528885057410473,
-    "CAD/JPY": 107.9745,
-    "JPY/CAD": 0.00926144598956235,
-    "NZD/JPY": 86.508,
-    "JPY/NZD": 0.011559624543394832
+    "EUR/CAD": 1.62515,
+    "CAD/EUR": 0.6153278158939175,
+    "GBP/USD": 1.32296,
+    "USD/GBP": 0.7558807522525247,
+    "USD/CAD": 1.39816,
+    "CAD/USD": 0.7152257252388854,
+    "AUD/USD": 0.65532,
+    "USD/AUD": 1.5259720441921503,
+    "NZD/USD": 0.57359,
+    "USD/NZD": 1.7434055684373855,
+    "USD/CHF": 0.80337,
+    "CHF/USD": 1.2447564633979362,
+    "AUD/CHF": 0.52645,
+    "CHF/AUD": 1.8995156235160036,
+    "GBP/CHF": 1.06281,
+    "CHF/GBP": 0.9409019486079355,
+    "CAD/CHF": 0.57463,
+    "CHF/CAD": 1.7402502479856605,
+    "GBP/CAD": 1.84966,
+    "CAD/GBP": 0.540639901387282,
+    "NZD/CHF": 0.4608,
+    "CHF/NZD": 2.170138888888889,
+    "USD/JPY": 155.277,
+    "JPY/USD": 0.0064401038144734895,
+    "GBP/JPY": 205.427,
+    "JPY/GBP": 0.004867909281642628,
+    "AUD/JPY": 101.7545,
+    "JPY/AUD": 0.009827575193234697,
+    "CHF/JPY": 193.285,
+    "JPY/CHF": 0.005173707219908425,
+    "CAD/JPY": 111.065,
+    "JPY/CAD": 0.009003736550668528,
+    "NZD/JPY": 89.0665,
+    "JPY/NZD": 0.011227565919846406
   },
   "costs": {
     "spread_pips_default": 1.0,
@@ -158,8 +180,8 @@
     "period": "weekly"
   },
   "account": {
-    "starting_balance": 10000.0,
-    "risk_percent": 5.0,
+    "starting_balance": 240.0,
+    "risk_percent": 30.0,
     "risk_pips_baseline": 100,
     "currency": "EUR"
   },
@@ -173,6 +195,10 @@
       "base_currency": "EUR",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "EUR USD",
@@ -302,6 +328,10 @@
       "base_currency": "USD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "USD JPY",
@@ -431,6 +461,10 @@
       "base_currency": "NZD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "NZD USD",
@@ -558,6 +592,10 @@
       "base_currency": "GBP",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "GBP USD",
@@ -689,6 +727,10 @@
       "base_currency": "AUD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "AUD USD",
@@ -817,6 +859,10 @@
       "base_currency": "EUR",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "EUR GBP",
@@ -948,6 +994,10 @@
       "base_currency": "EUR",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "EUR CHF",
@@ -1076,6 +1126,10 @@
       "base_currency": "USD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "USD CHF",
@@ -1204,6 +1258,10 @@
       "base_currency": "GBP",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "GBP CHF",
@@ -1334,6 +1392,10 @@
       "base_currency": "AUD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "AUD CHF",
@@ -1461,6 +1523,10 @@
       "base_currency": "NZD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "NZD CHF",
@@ -1587,6 +1653,10 @@
       "base_currency": "EUR",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "EUR JPY",
@@ -1716,6 +1786,10 @@
       "base_currency": "GBP",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "GBP JPY",
@@ -1847,6 +1921,10 @@
       "base_currency": "AUD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "AUD JPY",
@@ -1975,6 +2053,10 @@
       "base_currency": "NZD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "NZD JPY",
@@ -2102,6 +2184,10 @@
       "base_currency": "CAD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "CAD CHF",
@@ -2229,6 +2315,10 @@
       "base_currency": "CAD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "CAD JPY",
@@ -2357,6 +2447,10 @@
       "base_currency": "GBP",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "GBP CAD",
@@ -2487,6 +2581,10 @@
       "base_currency": "USD",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "USD CAD",
@@ -2615,6 +2713,10 @@
       "base_currency": "CHF",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "CHF JPY",
@@ -2743,6 +2845,10 @@
       "base_currency": "EUR",
       "contract_size": 100000.0,
       "asset_type": "FOREX",
+      "tp_settings": {
+        "atr_multiplier": 1.0,
+        "swing": false
+      },
       "news_triggers": {
         "queries": [
           "EUR CAD",

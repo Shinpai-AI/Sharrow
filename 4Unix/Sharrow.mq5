@@ -1,10 +1,10 @@
-// Sharrow.mq5 – AI Trading System (H1 Trading + Multi-TF Export + News Integration v6.0)
-// Copyright: Shinpai-AI — Publisher: Shinpai
-// Link: https://github.com/Shinpai-AI/Sharrow
+// Sharrow.mq5 – Multi-Asset Trend Engine (H1 Trading + Multi-TF Export + Smart News v6.0)
+// Copyright: Hannes Kell / Shinpai-AI
+// Link: https://github.com/Shinpai-AI/Projekt-SAI
 // Version: 6.0 (Showcase Cleanup + Smart Asset Detection)
 
-#property copyright "Shinpai-AI — Publisher: Shinpai"
-#property link      "https://github.com/Shinpai-AI/Sharrow"
+#property copyright "Hannes Kell / Shinpai-AI"
+#property link      "https://github.com/Shinpai-AI/Projekt-SAI"
 #property version   "6.00"
 
 // Abhängigkeiten
@@ -142,6 +142,8 @@ input double FixedLot = 0.0;                          // Feste Lot-Größe (0 = 
 input double Leverage = 30.0;                         // Hebel
 input double MinSLPips = 10.0;                        // Mindest-SL-Distanz (Schutzmechanismus)
 input bool EnableTrading = false;                     // Trading aktivieren/deaktivieren
+input bool DailyDrawdownEnabled = true;               // Täglichen Drawdown-Schutz aktivieren
+input double DailyDrawdownPercent = 5.0;              // Tages-Drawdown-Limit in % vom Tagesstart
 
 input group "=== FINALE SIGNAL ENTSCHEIDUNG ==="
 input bool NewsClosingEnabled = true;                 // News-Flip Trade-Closing als Versicherung aktivieren
@@ -154,16 +156,29 @@ input bool EnableDebug = false;                        // Debug-Logs aktivieren
 input group "=== TRADE SCHUTZ & MANAGEMENT ==="
 input int CooldownMinutesAfterLoss = 5;               // Cooldown nach SL (Minuten, 0 = aus)
 input bool CooldownWaitForNewH1Bar = true;            // Nach SL neue H1-Kerze abwarten
-input bool EnableBreakEven = true;                    // Break-Even Absicherung aktivieren
-input double BreakEvenTriggerATR = 0.5;               // SL nachziehen ab Gewinn >= X * ATR
-input double BreakEvenOffsetPips = 1.0;               // Sicherheitsabstand über/unter Entry (in Pips)
-input double BreakEvenTriggerPips = 3.0;              // Break-Even sobald Gewinn >= X Pips (0 = deaktiviert)
-input double BreakEvenTriggerMoney = 0.30;            // Break-Even sobald Gewinn >= X Kontowährung (0 = deaktiviert)
-input bool TrailingStopEnabled = true;               // Dynamischen Trailing-SL nach Gewinn aktivieren
-input double TrailingStepPips = 8.0;                  // Maximaler Pips-Abstand für Trailing-SL
-input double TrailingMinStepPips = 3.0;               // Minimaler Pips-Abstand für Trailing-SL
-input double TrailingAtrFactor = 0.35;                // Anteil des ATR-Wertes für dynamischen Schritt
-input double TrailingTpShare = 0.7;                   // Anteil des Abstands zum TP, der maximal genutzt wird
+input bool TrailingStopEnabled = true;               // ATR-basiertes 4-Phasen Trailing aktivieren
+input double AtrTrailInitialSL = 2.0;                // Phase 1: Initialer SL = Entry ± (X × ATR)
+input double AtrTrailPhase2Trigger = 1.0;            // Phase 2 Trigger: Profit >= X × ATR
+input double AtrTrailPhase2Buffer = 0.5;             // Phase 2 SL-Offset = Entry ± (X × ATR)
+input double AtrTrailPhase3Trigger = 1.5;            // Phase 3 Trigger: Profit >= X × ATR
+input double AtrTrailPhase3Buffer = 0.8;             // Phase 3 SL vom High/Low = ± (X × ATR)
+input double AtrTrailPhase4Trigger = 2.0;            // Phase 4 Trigger: Profit >= X × ATR
+input double AtrTrailPhase4Buffer = 0.5;             // Phase 4 Mindestgewinn = Entry ± (X × ATR)
+
+input group "=== BREAK-EVEN FLOOR ==="
+input bool BreakEvenFloorEnabled = true;             // Aktiviert Null-Euro-Floor sobald Gewinnschwelle erreicht
+input double BreakEvenTriggerPercent = 0.5;          // Gewinnschwelle in % des Einsatzes (z.B. 0.5 = 0.5 %)
+input double BreakEvenTriggerMinMoney = 0.30;        // Mindestgewinn in Account-Währung bevor Floor greift
+input double BreakEvenLockPercent = 0.5;             // Ziel-Gewinnpuffer in % des Einsatzes (fixe Sicherung)
+input double BreakEvenLockMinMoney = 0.01;           // Mindestbetrag, der gesichert wird
+input double BreakEvenLockMaxMoney = 2.0;            // Maximalbetrag, der gesichert wird (0 = kein Limit)
+
+input group "=== AUTO CASH & TARGET ==="
+input bool AutoCashEnabled = true;                   // Strukturbasierte Auto-Kasse (HH→LH bzw. LL→HL)
+input int AutoCashSwingDepth = 2;                    // Anzahl Bars links/rechts für Swing-Erkennung
+input int AutoCashLookbackBars = 120;                // Anzahl Bars für Swing-Suche
+input double AutoCashMinDiffPips = 3.0;              // Minimaler Abstand zwischen Swing-Punkten (Pips)
+input double AutoCashMinProfit = 0.0;                // Mindestprofit vor Auto-Kasse (Account-Währung)
 
 input group "=== ZEIT & GAP SCHUTZ ==="
 input bool NightStopEnabled = true;                   // Night-Break aktivieren (Handel pausiert nachts)
@@ -176,7 +191,7 @@ input int MinGapHours = 6;                            // Min. Stunden Pause für
 input group "=== BREAKREVERT MODELL ==="
 input double Breakout_Threshold = 0.4;                // Min. Wahrscheinlichkeit für Breakout (0-1)
 input double Mean_Reversion_Threshold = 0.4;          // Schwellwert für Mean-Reversion (0-1)
-input int Lookback_Period = 1;                        // Anzahl Kerzen für Wahrscheinlichkeit
+input int Lookback_Period = 24;                       // Anzahl Kerzen für Wahrscheinlichkeit
 
 input group "=== QUALITÄTS FILTER ==="
 input double Quality_Stoch_Buy_Max = 30.0;            // Buy nur wenn Stochastic unter diesem Wert
@@ -188,6 +203,7 @@ input ENUM_TP_MULTIPLIER FixedTP = TP_2_0;            // Take-Profit (Fallback)
 input ENUM_SL_VARIANT FixedSL = SL_2_0ATR;            // Stop-Loss (Fallback)
 input bool UseSpreadAdjustment = true;                // Live-Spread zu TP addieren (Broker-Realität)
 input int OrderDeviationPoints = 20;                  // Maximaler Slippage-Puffer für Market Orders (in Punkten)
+
 
 input group "=== CASINO CHAOS MODUS ==="
 input bool CasinoModeEnabled = false;                 // Chaos-Erkennung aktivieren
@@ -221,6 +237,8 @@ struct OptimizedParameters {
    double stoch_buy_max;     // Optimierte Stochastic BUY-Schwelle  
    double stoch_sell_min;    // Optimierte Stochastic SELL-Schwelle
    double volume_min;        // Optimierte Volume-Schwelle
+   double breakout_threshold;      // Dynamische Breakout-Schwelle
+   double mean_reversion_threshold;// Dynamische Mean-Reversion-Schwelle
    bool parameters_loaded;   // Flag ob Parameter aus Rules geladen wurden
 };
 
@@ -241,6 +259,7 @@ const double CASINO_MIN_CHURN_TRIGGER   = 3.0;       // Mindest-Churn-Triggerval
 const int    CASINO_M1_TREND_BARS      = 15;         // Anzahl M1-Kerzen für Momentum-Check
 const int    CASINO_M15_CONFIRM_BARS   = 2;          // Anzahl M15-Kerzen für Bestätigung
 const double CASINO_MIN_IMPULSE_PIPS   = 5.0;        // Mindest-Impuls in Pips (M1 Start → Ende)
+const int    BREAKREVERT_MIN_LOOKBACK  = 24;         // Mindestanzahl H1-Kerzen für BreakRevert
 
 // 🚀 NEUE GLOBALE VARIABLE: Optimierte Parameter für aktuelles Symbol  
 OptimizedParameters g_optimized_params;
@@ -827,6 +846,448 @@ datetime news_timer_start = 0;
 int last_news_signal = 0;
 long news_check_interval_seconds;
 string last_news_status = "", last_rules_status = "";
+datetime g_last_auto_cash_buy_signal_time = 0;
+datetime g_last_auto_cash_sell_signal_time = 0;
+
+double GetPipValuePerLot()
+{
+   if(g_pip_value_account > 0.0)
+      return g_pip_value_account;
+
+   double pip_size = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   double tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE_PROFIT);
+   if(tick_value <= 0.0)
+      tick_value = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   double tick_size = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+
+   if(tick_value > 0.0 && tick_size > 0.0 && pip_size > 0.0)
+      return tick_value * (pip_size / tick_size);
+
+   double contract_size = (g_contract_size > 0.0) ? g_contract_size : SymbolInfoDouble(_Symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   if(pip_size > 0.0 && contract_size > 0.0)
+      return pip_size * contract_size;
+
+   return 0.0;
+}
+
+bool CalculateBreakEvenFloor(int position_type,
+                             double entry_price,
+                             double position_profit,
+                             double position_margin,
+                              double position_volume,
+                             double &out_sl,
+                             double &locked_money,
+                             double &trigger_money)
+{
+   out_sl = 0.0;
+   locked_money = 0.0;
+   trigger_money = 0.0;
+
+   if(!BreakEvenFloorEnabled || position_volume <= 0.0 || position_profit <= 0.0)
+      return false;
+
+   double effective_margin = position_margin;
+   if(effective_margin <= 0.0 && g_margin_per_lot > 0.0)
+      effective_margin = position_volume * g_margin_per_lot;
+   if(effective_margin <= 0.0)
+      return false;
+
+   double trigger_percent = MathMax(BreakEvenTriggerPercent, 0.0);
+   trigger_money = effective_margin * trigger_percent * 0.01;
+   trigger_money = MathMax(trigger_money, MathMax(BreakEvenTriggerMinMoney, 0.0));
+   if(position_profit < trigger_money)
+      return false;
+
+   double lock_percent = MathMax(BreakEvenLockPercent, 0.0);
+   locked_money = effective_margin * lock_percent * 0.01;
+   locked_money = MathMax(locked_money, MathMax(BreakEvenLockMinMoney, 0.0));
+   if(BreakEvenLockMaxMoney > 0.0)
+      locked_money = MathMin(locked_money, BreakEvenLockMaxMoney);
+   locked_money = MathMin(locked_money, position_profit);
+   if(locked_money <= 0.0)
+      locked_money = MathMin(position_profit, 0.01);
+
+   double pip_value_per_lot = GetPipValuePerLot();
+   if(pip_value_per_lot <= 0.0)
+      return false;
+
+   double pip_value_position = pip_value_per_lot * position_volume;
+   if(pip_value_position <= 0.0)
+      return false;
+
+   double pip_size = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   if(pip_size <= 0.0)
+      pip_size = _Point;
+
+   double lock_pips = locked_money / pip_value_position;
+   if(lock_pips <= 0.0)
+      lock_pips = 0.1;
+
+   double price_offset = lock_pips * pip_size;
+   if(price_offset <= 0.0)
+      price_offset = pip_size;
+
+   if(position_type == POSITION_TYPE_BUY)
+      out_sl = NormalizeDouble(entry_price + price_offset, _Digits);
+   else if(position_type == POSITION_TYPE_SELL)
+      out_sl = NormalizeDouble(entry_price - price_offset, _Digits);
+   else
+      return false;
+
+   return true;
+}
+
+bool GetRecentSwingHighs(int depth,
+                         int lookback,
+                         double &h0,
+                         datetime &t0,
+                         double &h1,
+                         datetime &t1,
+                         double &h2,
+                         datetime &t2)
+{
+   int bars_to_copy = MathMax(lookback, depth * 4);
+   bars_to_copy = MathMax(bars_to_copy, depth * 2 + 10);
+
+   double highs[];
+   datetime times[];
+   ArraySetAsSeries(highs, true);
+   ArraySetAsSeries(times, true);
+
+   int copied = CopyHigh(_Symbol, _Period, 0, bars_to_copy, highs);
+   if(copied <= depth * 2)
+      return false;
+   if(CopyTime(_Symbol, _Period, 0, copied, times) != copied)
+      return false;
+
+   int found = 0;
+   for(int shift = depth; shift < copied - depth && found < 3; ++shift)
+   {
+      double price = highs[shift];
+      bool is_high = true;
+      for(int d = 1; d <= depth; ++d)
+      {
+         if(price <= highs[shift + d] || price <= highs[shift - d])
+         {
+            is_high = false;
+            break;
+         }
+      }
+
+      if(is_high)
+      {
+         if(found == 0)
+         {
+            h0 = price;
+            t0 = times[shift];
+         }
+         else if(found == 1)
+         {
+            h1 = price;
+            t1 = times[shift];
+         }
+         else
+         {
+            h2 = price;
+            t2 = times[shift];
+         }
+         found++;
+      }
+   }
+
+   return (found >= 3);
+}
+
+bool GetRecentSwingLows(int depth,
+                        int lookback,
+                        double &l0,
+                        datetime &t0,
+                        double &l1,
+                        datetime &t1,
+                        double &l2,
+                        datetime &t2)
+{
+   int bars_to_copy = MathMax(lookback, depth * 4);
+   bars_to_copy = MathMax(bars_to_copy, depth * 2 + 10);
+
+   double lows[];
+   datetime times[];
+   ArraySetAsSeries(lows, true);
+   ArraySetAsSeries(times, true);
+
+   int copied = CopyLow(_Symbol, _Period, 0, bars_to_copy, lows);
+   if(copied <= depth * 2)
+      return false;
+   if(CopyTime(_Symbol, _Period, 0, copied, times) != copied)
+      return false;
+
+   int found = 0;
+   for(int shift = depth; shift < copied - depth && found < 3; ++shift)
+   {
+      double price = lows[shift];
+      bool is_low = true;
+      for(int d = 1; d <= depth; ++d)
+      {
+         if(price >= lows[shift + d] || price >= lows[shift - d])
+         {
+            is_low = false;
+            break;
+         }
+      }
+
+      if(is_low)
+      {
+         if(found == 0)
+         {
+            l0 = price;
+            t0 = times[shift];
+         }
+         else if(found == 1)
+         {
+            l1 = price;
+            t1 = times[shift];
+         }
+         else
+         {
+            l2 = price;
+            t2 = times[shift];
+         }
+         found++;
+      }
+   }
+
+   return (found >= 3);
+}
+
+bool DetectAutoCashBuy(double min_diff_pips, double &exit_price, datetime &signal_time)
+{
+   double h0 = 0.0, h1 = 0.0, h2 = 0.0;
+   datetime t0 = 0, t1 = 0, t2 = 0;
+   if(!GetRecentSwingHighs(MathMax(AutoCashSwingDepth, 2), AutoCashLookbackBars, h0, t0, h1, t1, h2, t2))
+      return false;
+
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   double min_diff_price = MathMax(min_diff_pips, 0.0) * pip;
+
+   if(t0 <= t1 || t1 <= t2)
+      return false;
+
+   bool higher_high = (h1 - h2) > min_diff_price;
+   bool lower_high = (h1 - h0) > min_diff_price;
+
+   if(higher_high && lower_high)
+   {
+      exit_price = h0;
+      signal_time = t0;
+      return true;
+   }
+   return false;
+}
+
+bool DetectAutoCashSell(double min_diff_pips, double &exit_price, datetime &signal_time)
+{
+   double l0 = 0.0, l1 = 0.0, l2 = 0.0;
+   datetime t0 = 0, t1 = 0, t2 = 0;
+   if(!GetRecentSwingLows(MathMax(AutoCashSwingDepth, 2), AutoCashLookbackBars, l0, t0, l1, t1, l2, t2))
+      return false;
+
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   double min_diff_price = MathMax(min_diff_pips, 0.0) * pip;
+
+   if(t0 <= t1 || t1 <= t2)
+      return false;
+
+   bool lower_low = (l2 - l1) > min_diff_price;
+   bool higher_low = (l0 - l1) > min_diff_price;
+
+   if(lower_low && higher_low)
+   {
+      exit_price = l0;
+      signal_time = t0;
+      return true;
+   }
+   return false;
+}
+
+void HandleAutoCash()
+{
+   if(!AutoCashEnabled)
+      return;
+
+   if(!PositionSelect(_Symbol))
+      return;
+
+   double position_profit = PositionGetDouble(POSITION_PROFIT);
+   if(position_profit <= AutoCashMinProfit)
+      return;
+
+   int position_type = (int)PositionGetInteger(POSITION_TYPE);
+   datetime position_time = (datetime)PositionGetInteger(POSITION_TIME);
+
+   double exit_price = 0.0;
+   datetime signal_time = 0;
+   double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+   double current_sl = PositionGetDouble(POSITION_SL);
+   double current_tp = PositionGetDouble(POSITION_TP);
+   double tp_for_modify = (current_tp <= 0.0) ? EMPTY_VALUE : current_tp;
+   double sl_for_modify = (current_sl <= 0.0) ? EMPTY_VALUE : current_sl;
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   long stops_level = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double min_distance = MathMax((double)stops_level * _Point, MIN_STOP_BUFFER_PIPS * pip);
+   if(min_distance <= 0.0)
+      min_distance = _Point;
+
+   if(position_type == POSITION_TYPE_BUY)
+   {
+      if(DetectAutoCashBuy(AutoCashMinDiffPips, exit_price, signal_time) && signal_time > position_time && signal_time > g_last_auto_cash_buy_signal_time)
+      {
+         double desired_tp = MathMax(exit_price, current_price + min_distance);
+         desired_tp = NormalizeDouble(desired_tp, _Digits);
+         string details = StringFormat("type=BUY target=%.5f price=%.5f profit=%.2f signal_time=%s", desired_tp, current_price, position_profit, TimeToString(signal_time, TIME_DATE|TIME_SECONDS));
+         if(trade.PositionModify(_Symbol, sl_for_modify, desired_tp))
+         {
+            StateLog("AUTO_CASH_TP", details);
+            Print("AUTO-CASH BUY TP gesetzt: ", details);
+         }
+         else
+         {
+            int err = GetLastError();
+            StateLog("AUTO_CASH_FAIL", details + StringFormat(" error=%d", err));
+            Print("AUTO-CASH BUY TP fail err ", err);
+            ResetLastError();
+         }
+         g_last_auto_cash_buy_signal_time = signal_time;
+      }
+   }
+   else if(position_type == POSITION_TYPE_SELL)
+   {
+      if(DetectAutoCashSell(AutoCashMinDiffPips, exit_price, signal_time) && signal_time > position_time && signal_time > g_last_auto_cash_sell_signal_time)
+      {
+         double desired_tp = MathMin(exit_price, current_price - min_distance);
+         desired_tp = NormalizeDouble(desired_tp, _Digits);
+         string details = StringFormat("type=SELL target=%.5f price=%.5f profit=%.2f signal_time=%s", desired_tp, current_price, position_profit, TimeToString(signal_time, TIME_DATE|TIME_SECONDS));
+         if(trade.PositionModify(_Symbol, sl_for_modify, desired_tp))
+         {
+            StateLog("AUTO_CASH_TP", details);
+            Print("AUTO-CASH SELL TP gesetzt: ", details);
+         }
+         else
+         {
+            int err = GetLastError();
+            StateLog("AUTO_CASH_FAIL", details + StringFormat(" error=%d", err));
+            Print("AUTO-CASH SELL TP fail err ", err);
+            ResetLastError();
+         }
+         g_last_auto_cash_sell_signal_time = signal_time;
+      }
+   }
+}
+
+bool CalculateTrailingStop_V2(int position_type,
+                              double entry_price,
+                              double current_price,
+                              double highest_price_since_entry,
+                              double lowest_price_since_entry,
+                              double atr_value,
+                              double &out_sl,
+                              int &phase_used)
+{
+   out_sl = 0.0;
+   phase_used = 0;
+
+   if(atr_value <= 0.0 || entry_price <= 0.0)
+      return false;
+
+   double sl = entry_price;
+   double profit = 0.0;
+   bool trailing_active = false;
+
+   double phase2_trigger = MathMax(AtrTrailPhase2Trigger, 0.0);
+   double phase2_buffer = MathMax(AtrTrailPhase2Buffer, 0.0);
+   double phase3_trigger = MathMax(AtrTrailPhase3Trigger, 0.0);
+   double phase3_buffer = MathMax(AtrTrailPhase3Buffer, 0.0);
+   double phase4_trigger = MathMax(AtrTrailPhase4Trigger, 0.0);
+   double phase4_buffer = MathMax(AtrTrailPhase4Buffer, 0.0);
+   double initial_multiplier = MathMax(AtrTrailInitialSL, 0.0);
+
+   if(position_type == POSITION_TYPE_BUY)
+   {
+      profit = current_price - entry_price;
+      if(profit <= 0.0)
+         return false;
+
+      phase_used = 1;
+      sl = entry_price - (initial_multiplier * atr_value);
+
+      if(phase2_trigger > 0.0 && profit >= (phase2_trigger * atr_value))
+      {
+         double trail_phase2 = entry_price - (phase2_buffer * atr_value);
+         sl = MathMax(sl, trail_phase2);
+         phase_used = 2;
+         trailing_active = true;
+      }
+
+      if(phase3_trigger > 0.0 && profit >= (phase3_trigger * atr_value))
+      {
+         double reference_high = highest_price_since_entry > 0.0 ? highest_price_since_entry : current_price;
+         double trail_phase3 = reference_high - (phase3_buffer * atr_value);
+         sl = MathMax(sl, trail_phase3);
+         phase_used = 3;
+      }
+
+      if(phase4_trigger > 0.0 && profit >= (phase4_trigger * atr_value))
+      {
+         double lock_price = entry_price + (phase4_buffer * atr_value);
+         sl = MathMax(sl, lock_price);
+         phase_used = 4;
+      }
+
+      if(!trailing_active)
+         return false;
+   }
+   else if(position_type == POSITION_TYPE_SELL)
+   {
+      profit = entry_price - current_price;
+      if(profit <= 0.0)
+         return false;
+
+      phase_used = 1;
+      sl = entry_price + (initial_multiplier * atr_value);
+
+      if(phase2_trigger > 0.0 && profit >= (phase2_trigger * atr_value))
+      {
+         double trail_phase2 = entry_price + (phase2_buffer * atr_value);
+         sl = MathMin(sl, trail_phase2);
+         phase_used = 2;
+         trailing_active = true;
+      }
+
+      if(phase3_trigger > 0.0 && profit >= (phase3_trigger * atr_value))
+      {
+         double reference_low = lowest_price_since_entry > 0.0 ? lowest_price_since_entry : current_price;
+         double trail_phase3 = reference_low + (phase3_buffer * atr_value);
+         sl = MathMin(sl, trail_phase3);
+         phase_used = 3;
+      }
+
+      if(phase4_trigger > 0.0 && profit >= (phase4_trigger * atr_value))
+      {
+         double lock_price = entry_price - (phase4_buffer * atr_value);
+         sl = MathMin(sl, lock_price);
+         phase_used = 4;
+      }
+
+      if(!trailing_active)
+         return false;
+   }
+   else
+   {
+      return false;
+   }
+
+   out_sl = NormalizeDouble(sl, _Digits);
+   return true;
+}
 
 bool IsNightStopActive()
 {
@@ -853,126 +1314,267 @@ bool IsNightStopActive()
    return (current_minutes >= start_minutes || current_minutes < end_minutes);
 }
 
+datetime GetServerDayStart(datetime timestamp)
+{
+   MqlDateTime tm;
+   TimeToStruct(timestamp, tm);
+   tm.hour = 0;
+   tm.min = 0;
+   tm.sec = 0;
+   return StructToTime(tm);
+}
+
+void ResetDailyDrawdown(datetime day_start, double balance)
+{
+   g_daily_reset_date = day_start;
+   g_daily_start_balance = balance;
+   g_daily_drawdown_stop = false;
+   g_daily_stop_notice_sent = false;
+   g_daily_last_debug_log = 0;
+
+   if(DailyDrawdownEnabled && EnableDebug)
+   {
+      string currency = AccountInfoString(ACCOUNT_CURRENCY);
+      if(StringLen(currency) == 0)
+         currency = "ACC";
+      DebugLog(StringFormat("Daily Reset: Neue Start-Balance = %.2f %s, Datum = %s",
+                            g_daily_start_balance,
+                            currency,
+                            TimeToString(day_start, TIME_DATE)));
+   }
+}
+
+bool CheckDailyDrawdownGuard()
+{
+   datetime now = TimeCurrent();
+   datetime day_start = GetServerDayStart(now);
+   double current_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+
+   if(g_daily_reset_date == 0 || day_start != g_daily_reset_date)
+      ResetDailyDrawdown(day_start, current_balance);
+
+   if(!DailyDrawdownEnabled || DailyDrawdownPercent <= 0.0)
+      return false;
+
+   if(g_daily_start_balance <= 0.0)
+      g_daily_start_balance = current_balance;
+
+   double drawdown_percent = 0.0;
+   if(g_daily_start_balance > 0.0)
+      drawdown_percent = ((g_daily_start_balance - current_balance) / g_daily_start_balance) * 100.0;
+   if(drawdown_percent < 0.0)
+      drawdown_percent = 0.0;
+
+   if(EnableDebug)
+   {
+      if(g_daily_last_debug_log == 0 || (now - g_daily_last_debug_log) >= 300)
+      {
+         DebugLog(StringFormat("Aktueller Drawdown: %.2f%% (Limit: %.2f%%)", drawdown_percent, DailyDrawdownPercent));
+         g_daily_last_debug_log = now;
+      }
+   }
+
+   if(drawdown_percent >= DailyDrawdownPercent)
+   {
+      if(!g_daily_drawdown_stop)
+      {
+         string msg = StringFormat("Daily Drawdown Limit erreicht: %.2f%% (Limit: %.2f%%)", drawdown_percent, DailyDrawdownPercent);
+         DebugLog(msg);
+         Print(msg);
+         StateLog("DRAWDOWN_STOP", msg);
+      }
+      g_daily_drawdown_stop = true;
+
+      if(!g_daily_stop_notice_sent)
+      {
+         string alert_msg = "DRAWDOWN STOP AKTIV! Keine neuen Trades heute!";
+         DebugLog(alert_msg);
+         Print(alert_msg);
+         g_daily_stop_notice_sent = true;
+      }
+      return true;
+   }
+
+   g_daily_drawdown_stop = false;
+   g_daily_stop_notice_sent = false;
+   return false;
+}
+
 void HandleTrailingStop()
 {
    if(!TrailingStopEnabled)
       return;
 
    if(!PositionSelect(_Symbol))
+   {
+      ResetBreakEvenAnchor();
       return;
+   }
+
+   UpdateTrailingExtrema();
 
    int position_type = (int)PositionGetInteger(POSITION_TYPE);
-   double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
+   double entry_price = g_break_even_entry_price > 0.0 ? g_break_even_entry_price : PositionGetDouble(POSITION_PRICE_OPEN);
    double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
    double current_sl = PositionGetDouble(POSITION_SL);
    double current_tp = PositionGetDouble(POSITION_TP);
+   double tp_for_modify = (current_tp <= 0.0) ? EMPTY_VALUE : current_tp;
+   double position_profit = PositionGetDouble(POSITION_PROFIT);
+   double position_volume = PositionGetDouble(POSITION_VOLUME);
+   double position_margin = (position_volume > 0.0 && g_margin_per_lot > 0.0)
+                            ? position_volume * g_margin_per_lot
+                            : 0.0;
 
-   double pip_size = (g_pip_size > 0.0) ? g_pip_size : _Point;
-   double max_step_pips = MathMax(TrailingStepPips, 0.0);
-   double min_step_pips = MathMax(TrailingMinStepPips, 0.0);
-   if(min_step_pips > 0.0 && min_step_pips > max_step_pips)
-      max_step_pips = min_step_pips;
-
-   double step_pips = max_step_pips;
-   if(g_last_atr_value > 0.0 && TrailingAtrFactor > 0.0)
+   if(g_last_atr_value <= 0.0 || entry_price <= 0.0)
    {
-      double atr_step = (g_last_atr_value / pip_size) * TrailingAtrFactor;
-      if(atr_step > 0.0)
-         step_pips = MathMin(step_pips, atr_step);
-   }
-
-   if(current_tp > 0.0 && TrailingTpShare > 0.0)
-   {
-      double tp_distance_price = MathAbs(current_price - current_tp);
-      double tp_distance_pips = tp_distance_price / pip_size;
-      if(tp_distance_pips > 0.0)
-      {
-         double tp_step = tp_distance_pips * TrailingTpShare;
-         if(tp_step > 0.0)
-            step_pips = MathMin(step_pips, tp_step);
-      }
-   }
-
-   step_pips = MathMax(step_pips, min_step_pips);
-
-   double step_price = step_pips * pip_size;
-   if(step_price < _Point)
-      step_price = _Point;
-
-   double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double min_broker_distance = stop_level_points * _Point;
-   if(min_broker_distance > 0.0)
-   {
-      double required_step = min_broker_distance + MIN_STOP_BUFFER_PIPS * pip_size;
-      if(step_price < required_step)
-      {
-         step_price = required_step;
-         step_pips = step_price / pip_size;
-      }
-   }
-
-   double profit_distance = (position_type == POSITION_TYPE_BUY)
-                            ? (current_price - entry_price)
-                            : (entry_price - current_price);
-
-   if(profit_distance <= step_price)
+      g_last_trailing_phase = 0;
       return;
+   }
 
-   double desired_sl = (position_type == POSITION_TYPE_BUY)
-                       ? current_price - step_price
-                       : current_price + step_price;
-   desired_sl = NormalizeDouble(desired_sl, _Digits);
+   double highest_price = g_trailing_highest_price > 0.0 ? g_trailing_highest_price : current_price;
+   double lowest_price = g_trailing_lowest_price > 0.0 ? g_trailing_lowest_price : current_price;
 
-   bool needs_update = false;
-   if(position_type == POSITION_TYPE_BUY)
+   double break_even_sl = 0.0;
+   double break_even_lock_money = 0.0;
+   double break_even_trigger_money = 0.0;
+   bool break_even_active = CalculateBreakEvenFloor(position_type,
+                                                    entry_price,
+                                                    position_profit,
+                                                    position_margin,
+                                                    position_volume,
+                                                    break_even_sl,
+                                                    break_even_lock_money,
+                                                    break_even_trigger_money);
+
+   double desired_sl = 0.0;
+   int phase_used = 0;
+   bool break_even_adjustment_applied = false;
+   bool trailing_valid = CalculateTrailingStop_V2(position_type,
+                                                  entry_price,
+                                                  current_price,
+                                                  highest_price,
+                                                  lowest_price,
+                                                  g_last_atr_value,
+                                                  desired_sl,
+                                                  phase_used);
+
+   if(trailing_valid)
    {
-      if(current_sl <= 0.0 || desired_sl > current_sl + _Point)
-         needs_update = true;
+      if(break_even_active)
+      {
+         if(position_type == POSITION_TYPE_BUY)
+         {
+            double prev = desired_sl;
+            desired_sl = MathMax(desired_sl, break_even_sl);
+            if(desired_sl > prev + _Point/2.0)
+               break_even_adjustment_applied = true;
+         }
+         else
+         {
+            double prev = desired_sl;
+            desired_sl = MathMin(desired_sl, break_even_sl);
+            if(desired_sl < prev - _Point/2.0)
+               break_even_adjustment_applied = true;
+         }
+      }
+   }
+   else if(break_even_active)
+   {
+      desired_sl = break_even_sl;
+      phase_used = 1;
+      break_even_adjustment_applied = true;
    }
    else
    {
-      if(current_sl <= 0.0 || desired_sl < current_sl - _Point)
+      g_last_trailing_phase = 0;
+      return;
+   }
+
+   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
+   long stop_level_points = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
+   double broker_min = (double)stop_level_points * _Point;
+   if(broker_min <= 0.0)
+      broker_min = _Point;
+   double buffer_min = MIN_STOP_BUFFER_PIPS * pip;
+   double min_distance = break_even_adjustment_applied ? broker_min : MathMax(broker_min, buffer_min);
+
+   double distance_to_price = (position_type == POSITION_TYPE_BUY)
+                              ? (current_price - desired_sl)
+                              : (desired_sl - current_price);
+   if(distance_to_price < min_distance)
+   {
+      desired_sl = (position_type == POSITION_TYPE_BUY)
+                   ? current_price - min_distance
+                   : current_price + min_distance;
+      desired_sl = NormalizeDouble(desired_sl, _Digits);
+   }
+
+   bool needs_update = (current_sl <= 0.0);
+   if(!needs_update)
+   {
+      if(position_type == POSITION_TYPE_BUY && desired_sl > current_sl + _Point / 2.0)
+         needs_update = true;
+      else if(position_type == POSITION_TYPE_SELL && desired_sl < current_sl - _Point / 2.0)
          needs_update = true;
    }
+
+   g_last_trailing_phase = phase_used;
 
    if(!needs_update)
       return;
 
-   double distance_to_price = MathAbs(current_price - desired_sl);
-   double min_distance_price = MathMax(min_broker_distance, _Point);
-   if(distance_to_price < min_distance_price)
-   {
-      desired_sl = (position_type == POSITION_TYPE_BUY)
-                   ? current_price - min_distance_price
-                   : current_price + min_distance_price;
-      desired_sl = NormalizeDouble(desired_sl, _Digits);
-   }
-
-   double tp_for_modify = (current_tp <= 0.0) ? EMPTY_VALUE : current_tp;
    if(trade.PositionModify(_Symbol, desired_sl, tp_for_modify))
    {
-      string details = StringFormat("type=%s entry=%.5f price=%.5f sl=%.5f step=%.2f pips",
-                                    position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                                    entry_price,
-                                    current_price,
-                                    desired_sl,
-                                    step_pips);
-      StateLog("TRAILING_UPDATE", details);
-      Print("TRAILING-SL aktualisiert: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
-            " SL→", DoubleToString(desired_sl, _Digits));
+      string details;
+      string event_name = (phase_used == 1) ? "BREAK_EVEN" : "ATR_TRAIL";
+      if(phase_used == 1)
+      {
+         details = StringFormat("type=%s entry=%.5f price=%.5f sl=%.5f profit=%.2f lock=%.2f trigger=%.2f",
+                                position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
+                                entry_price,
+                                current_price,
+                                desired_sl,
+                                position_profit,
+                                break_even_lock_money,
+                                break_even_trigger_money);
+      }
+      else
+      {
+         details = StringFormat("type=%s entry=%.5f price=%.5f sl=%.5f atr=%.5f phase=P%d",
+                                position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
+                                entry_price,
+                                current_price,
+                                desired_sl,
+                                g_last_atr_value,
+                                phase_used);
+      }
+
+      StateLog(event_name, details);
+      if(phase_used == 1)
+      {
+         Print("BREAK-EVEN FLOOR: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
+               " SL→", DoubleToString(desired_sl, _Digits),
+               " (lock=", DoubleToString(break_even_lock_money, 2), ")");
+      }
+      else
+      {
+         Print("ATR-TRAIL: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
+               " SL→", DoubleToString(desired_sl, _Digits), " (Phase ", phase_used, ")");
+      }
    }
    else
    {
       int err = GetLastError();
-      string details = StringFormat("type=%s entry=%.5f price=%.5f attempted_sl=%.5f step=%.2f pips error=%d",
+      string details = StringFormat("type=%s entry=%.5f price=%.5f attempted_sl=%.5f atr=%.5f phase=P%d error=%d",
                                     position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
                                     entry_price,
                                     current_price,
                                     desired_sl,
-                                    step_pips,
+                                    g_last_atr_value,
+                                    phase_used,
                                     err);
-      StateLog("TRAILING_FAIL", details);
-      Print("TRAILING-SL FEHLGESCHLAGEN: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
+      StateLog("ATR_TRAIL_FAIL", details);
+      Print("ATR-TRAIL FEHLGESCHLAGEN: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
             " SL", DoubleToString(desired_sl, _Digits), " -> Error ", err);
       ResetLastError();
    }
@@ -1007,6 +1609,7 @@ int CountKeywordHits(const string line, string &keywords[]) {
 }
 
 double global_tp_atr = 0.0;
+string global_tp_mode = "atr";
 string global_sl_type = "";
 double global_sl_dist = 0.0;
 double global_win_rate = 0.0;
@@ -1016,6 +1619,14 @@ bool account_too_small = false;    // Trigger: Konto zu klein für Symbol
 double global_lot_size = 0.0;     // LotSize aus Rules - 0.0 = verwende EA Einstellungen
 double g_break_even_entry_price = 0.0;  // Erster/maßgeblicher Einstiegspreis der laufenden Position
 int g_break_even_position_type = -1;    // Positionstyp für Break-Even-Anker (-1 = keine Position)
+double g_trailing_highest_price = 0.0;  // Höchster Kurs seit Entry (BUY)
+double g_trailing_lowest_price = 0.0;   // Tiefster Kurs seit Entry (SELL)
+int g_trailing_position_type = -1;      // Positionstyp für High/Low Tracking
+int g_last_trailing_phase = 0;          // Zuletzt angewendete Trailing-Phase (1-4)
+int g_last_breakrevert_signal = 0;      // Letztes rohes BreakRevert-Signal (±1)
+string g_last_breakrevert_type = "";   // Beschreibung (z.B. BREAKOUT BUY/SELL)
+bool g_last_logic_filters_pass = false; // Merker ob ADX/Stoch/Vol Filter bestanden
+string g_last_logic_filter_reason = "";// Warum Logik-Filter blockierten
 
 bool AdjustStopsForBroker(bool is_buy, double market_price, double &sl_price, double &tp_price)
 {
@@ -1091,13 +1702,18 @@ datetime margin_block_last_notice = 0;
 
 // Night-Stop Logging Guard
 bool g_night_stop_notice_sent = false;
+double g_daily_start_balance = 0.0;
+datetime g_daily_reset_date = 0;
+bool g_daily_drawdown_stop = false;
+bool g_daily_stop_notice_sent = false;
+datetime g_daily_last_debug_log = 0;
 
 // === NEWS-SENTIMENT SYSTEM - Einfaches News-Closing ===
 int trade_entry_sentiment = 0;    // News-Sentiment beim Trade-Start: 1=BULLISH, -1=BEARISH, 0=NEUTRAL
 datetime trade_entry_time = 0;    // Zeitpunkt der Trade-Eröffnung
 bool news_closing_enabled = true; // News-Closing aktivieren/deaktivieren
 
-// === GOLDJUNGE DECISION TREE ENGINE ===
+// === SHARROW DECISION TREE ENGINE ===
 // RuleNode für 4-Stage Pipeline (stochastic, adx, atr, weibull_prob, poisson_prob, volume)
 struct GoldRuleNode {
    string feature;        // "stochastic", "adx", "atr", "weibull_prob", "poisson_prob", "volume"
@@ -1565,7 +2181,7 @@ double ConvertToAccountCurrency(double value, string symbol) {
 // Preise für M1, M15, H1 laden
 bool UpdatePriceData() {
    bool success = true;
-   int safe_lookback = MathMax(1, Lookback_Period);
+   int safe_lookback = MathMax(BREAKREVERT_MIN_LOOKBACK, Lookback_Period);
 
    double prices_m1[];
    int copied_m1 = CopyClose(_Symbol, PERIOD_M1, 0, safe_lookback, prices_m1);
@@ -1597,9 +2213,9 @@ bool UpdatePriceData() {
    return success && m_close_prices_m1.Total() > 0 && m_close_prices_m15.Total() > 0 && m_close_prices_h1.Total() > 0;
 }
 
-// Wahrscheinlichkeiten berechnen
+// Wahrscheinlichkeiten berechnen (angepasst an Python-Training)
 void CalculateProbabilities() {
-   if(m_close_prices_m1.Total() == 0) {
+   if(m_close_prices_h1.Total() == 0) {
       m_weibull_values.Clear();
       m_poisson_values.Clear();
       m_exponential_values.Clear();
@@ -1609,161 +2225,212 @@ void CalculateProbabilities() {
       return;
    }
 
-   double temp_array[];
-   int size_m1 = m_close_prices_m1.Total();
-   ArrayResize(temp_array, size_m1);
-   for(int i = 0; i < size_m1; i++) {
-      temp_array[i] = m_close_prices_m1.At(i);
-      if(temp_array[i] <= 0) temp_array[i] = 1.0;
+   int total = m_close_prices_h1.Total();
+   int lookback = MathMax(BREAKREVERT_MIN_LOOKBACK, MathMin(Lookback_Period, total));
+   if(lookback < 2) lookback = MathMin(2, total);
+
+   double close_values[];
+   ArrayResize(close_values, total);
+   for(int i = 0; i < total; i++) {
+      close_values[i] = m_close_prices_h1.At(i);
+      if(close_values[i] <= 0) close_values[i] = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    }
 
    double weibull_result[];
-   if(!MathProbabilityDensityWeibull(temp_array, 1.5, 5.0, weibull_result) || ArraySize(weibull_result) == 0) {
-      ArrayResize(weibull_result, size_m1);
-      ArrayInitialize(weibull_result, 0.5);
-   }
-   m_weibull_values.AssignArray(weibull_result);
-
-   int event_counts_int[];
-   ArrayResize(event_counts_int, size_m1);
-   ArrayInitialize(event_counts_int, 1);
-   if(size_m1 > 1) {
-      for(int i = 1; i < size_m1; i++) {
-         if(MathAbs(temp_array[i] - temp_array[i - 1]) > 5 * SymbolInfoDouble(_Symbol, SYMBOL_POINT)) {
-            event_counts_int[i] = event_counts_int[i - 1] + 1;
-         } else {
-            event_counts_int[i] = event_counts_int[i - 1];
-         }
-      }
-   }
-   double event_counts[];
-   ArrayResize(event_counts, size_m1);
-   for(int i = 0; i < size_m1; i++) {
-      event_counts[i] = (double)event_counts_int[i];
-   }
-   double sum = 0.0;
-   for(int i = 0; i < size_m1; i++) {
-      sum += event_counts[i];
-   }
-   double lambda = sum / size_m1;
-   if(lambda <= 0 || lambda > 1000000) lambda = 5.0;
    double poisson_result[];
-   if(!MathCumulativeDistributionPoisson(event_counts, lambda, poisson_result)) {
-      ArrayResize(poisson_result, size_m1);
-      ArrayInitialize(poisson_result, 0.5);
-   }
-   m_poisson_values.AssignArray(poisson_result);
+   double returns[];
+   ArrayResize(weibull_result, total);
+   ArrayResize(poisson_result, total);
+   ArrayResize(returns, total);
 
-   sum = 0.0;
-   for(int i = 0; i < size_m1; i++) {
-      sum += temp_array[i];
+   returns[0] = 0.0;
+   for(int i = 1; i < total; i++) {
+      double prev = close_values[i - 1];
+      if(prev == 0.0) prev = close_values[i];
+      if(prev == 0.0) prev = 1.0;
+      returns[i] = (close_values[i] - prev) / prev;
    }
-   double mu = sum / size_m1;
-   if(mu <= 0) mu = 1.0;
-   double exp_result[];
-   if(!MathCumulativeDistributionExponential(temp_array, mu, exp_result) || ArraySize(exp_result) == 0) {
-      ArrayResize(exp_result, size_m1);
-      ArrayInitialize(exp_result, 0.5);
+
+   double price_sum = 0.0;
+   for(int i = 0; i < total; i++) {
+      price_sum += close_values[i];
+      if(i >= lookback)
+         price_sum -= close_values[i - lookback];
+      int window = (i + 1 < lookback) ? (i + 1) : lookback;
+      double mean_price = price_sum / window;
+      if(mean_price <= 0.0)
+         mean_price = close_values[i];
+      double normalized_price = close_values[i] / mean_price;
+      if(normalized_price < 0.01)
+         normalized_price = 0.01;
+      weibull_result[i] = 1.0 - MathExp(-MathPow(normalized_price, 1.5));
+      if(!MathIsValidNumber(weibull_result[i]))
+         weibull_result[i] = 0.5;
    }
-   m_exponential_values.AssignArray(exp_result);
+
+   double ret_sum = 0.0;
+   double ret_sq_sum = 0.0;
+   double lambda_sum = 0.0;
+   double move_history[];
+   ArrayResize(move_history, total);
+
+   for(int i = 0; i < total; i++) {
+      double r = returns[i];
+      ret_sum += r;
+      ret_sq_sum += r * r;
+      if(i >= lookback) {
+         double old_r = returns[i - lookback];
+         ret_sum -= old_r;
+         ret_sq_sum -= old_r * old_r;
+      }
+      int window = (i + 1 < lookback) ? (i + 1) : lookback;
+      double mean = ret_sum / window;
+      double variance = ret_sq_sum / window - mean * mean;
+      if(variance < 1e-8)
+         variance = 1e-8;
+      double volatility = MathSqrt(variance);
+      if(volatility <= 0.0)
+         volatility = 0.0001;
+
+      double move = MathAbs(r) / volatility;
+      move_history[i] = move;
+      lambda_sum += move;
+      if(i >= lookback)
+         lambda_sum -= move_history[i - lookback];
+      double lambda = lambda_sum / window;
+      if(lambda < 0.1)
+         lambda = 0.1;
+
+      int err = 0;
+      double k = MathFloor(move);
+      if(k < 0)
+         k = 0;
+      double cdf = MathCumulativeDistributionPoisson(k, lambda, err);
+      if(err != 0 || !MathIsValidNumber(cdf))
+         cdf = 0.5;
+      poisson_result[i] = cdf;
+   }
+
+   m_weibull_values.AssignArray(weibull_result);
+   m_poisson_values.AssignArray(poisson_result);
+   m_exponential_values.AssignArray(weibull_result);
 }
 
 // ===== HAUPT-LOGIK-SIGNAL (BreakRevert-Basis) - SYMMETRISCH + ADX/STOCH/VOL INTEGRIERT =====
 int GetLogicSignal() {
-   if(!UpdatePriceData()) return 0;
+   g_last_breakrevert_signal = 0;
+   g_last_breakrevert_type = "";
+   g_last_logic_filters_pass = false;
+   g_last_logic_filter_reason = "";
+
+   if(!UpdatePriceData())
+      return 0;
+
    CalculateProbabilities();
 
    double weibull_prob = m_weibull_values.Total() > 0 ? m_weibull_values.At(m_weibull_values.Total() - 1) : 0.5;
    double poisson_prob = m_poisson_values.Total() > 0 ? m_poisson_values.At(m_poisson_values.Total() - 1) : 0.5;
 
-   double m1_trend = m_close_prices_m1.Total() >= 2 ? m_close_prices_m1.At(0) - m_close_prices_m1.At(m_close_prices_m1.Total() - 1) : 0;
-   double m15_trend = m_close_prices_m15.Total() >= 2 ? m_close_prices_m15.At(0) - m_close_prices_m15.At(m_close_prices_m15.Total() - 1) : 0;
    double h1_min = m_close_prices_h1.Total() > 0 ? m_close_prices_h1[0] : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   for(int i = 1; i < m_close_prices_h1.Total(); i++) {
-      if(m_close_prices_h1[i] < h1_min) h1_min = m_close_prices_h1[i];
+   for(int i = 1; i < m_close_prices_h1.Total(); i++)
+   {
+      if(m_close_prices_h1[i] < h1_min)
+         h1_min = m_close_prices_h1[i];
    }
    double h1_max = m_close_prices_h1.Total() > 0 ? m_close_prices_h1[0] : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   for(int i = 1; i < m_close_prices_h1.Total(); i++) {
-      if(m_close_prices_h1[i] > h1_max) h1_max = m_close_prices_h1[i];
+   for(int i = 1; i < m_close_prices_h1.Total(); i++)
+   {
+      if(m_close_prices_h1[i] > h1_max)
+         h1_max = m_close_prices_h1[i];
    }
    double h1_volatility = h1_max - h1_min;
+   double h1_trend = m_close_prices_h1.Total() >= 2 ? m_close_prices_h1.At(m_close_prices_h1.Total() - 1) - m_close_prices_h1.At(0) : 0;
 
-   // ===== INDIKATOR-DATEN FÜR VERIFIKATION =====
+   double breakout_threshold = g_optimized_params.breakout_threshold;
+   double mean_reversion_threshold = g_optimized_params.mean_reversion_threshold;
+   double volatility_threshold = 10 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+   double trend_threshold = 20 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+
+   bool breakout_signal = (weibull_prob > breakout_threshold) &&
+                          (poisson_prob > breakout_threshold) &&
+                          (h1_volatility > volatility_threshold);
+
+   bool breakout_sell_signal = (weibull_prob < mean_reversion_threshold) &&
+                               (poisson_prob < mean_reversion_threshold) &&
+                               (h1_volatility > volatility_threshold) &&
+                               (h1_trend <= -trend_threshold);
+
+   int signal_candidate = 0;
+   string signal_type = "";
+   if(breakout_signal)
+   {
+      signal_candidate = 1;
+      signal_type = "BREAKOUT BUY";
+   }
+   else if(breakout_sell_signal)
+   {
+      signal_candidate = -1;
+      signal_type = "BREAKOUT SELL";
+   }
+
+   g_last_breakrevert_signal = signal_candidate;
+   g_last_breakrevert_type = signal_type;
+
    double adx[2], stochastic_k[2], stochastic_d[2];
    long volume[2];
-   
    if(CopyBuffer(adx_handle, 0, 0, 2, adx) < 2 ||
       CopyBuffer(stochastic_handle, 0, 0, 2, stochastic_k) < 2 ||
       CopyBuffer(stochastic_handle, 1, 0, 2, stochastic_d) < 2 ||
-      CopyTickVolume(_Symbol, Period(), 0, 2, volume) < 2) {
+      CopyTickVolume(_Symbol, Period(), 0, 2, volume) < 2)
+   {
       DebugLog("Logic Signal: Indikatoren nicht verfügbar, Signal=0");
+      g_last_logic_filter_reason = "INDIKATOREN";
       return 0;
    }
 
-   // ===== EINHEITLICHES BREAKREVERT-SYSTEM =====
-   // H1 entscheidet BREAKOUT vs MEAN REVERSION, M1/M15 bestimmen BUY/SELL
-   double h1_trend = m_close_prices_h1.Total() >= 2 ? m_close_prices_h1.At(m_close_prices_h1.Total() - 1) - m_close_prices_h1.At(0) : 0;
-   
-   // BREAKOUT-SIGNAL: H1 Volatilität hoch + Weibull/Poisson > Threshold
-   bool breakout_signal = weibull_prob > Mean_Reversion_Threshold && 
-                         poisson_prob > Breakout_Threshold &&
-                         h1_volatility > 10 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   
-   // MEAN REVERSION-SIGNAL: H1 Trend schwach + Weibull < Threshold
-   bool mean_reversion_signal = weibull_prob < Mean_Reversion_Threshold && 
-                               MathAbs(h1_trend) < 20 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   
-   // ORIGINAL BREAKREVERT-LOGIK (nach BreakRevertPro.mq5)
-   int signal_candidate = 0;
-   string signal_type = "";
-   
-   // Original Logic: Breakout → BUY, Mean Reversion → SELL
-   if(breakout_signal) {
-      signal_candidate = 1;  // BREAKOUT → BUY (Original)
-      signal_type = "BREAKOUT BUY";
-   } else if(mean_reversion_signal) {
-      signal_candidate = -1; // MEAN REVERSION → SELL (Original)
-      signal_type = "MEAN REVERSION SELL";
-   }
-   
-   // 🚀 FINALE VERIFIKATION mit optimierten ADX/Stoch/Vol Parametern
-   if(signal_candidate != 0) {
-      double adx_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
-      double stoch_buy_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
-      double stoch_sell_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_sell_min : Quality_Stoch_Sell_Min;
-      double volume_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.volume_min : Quality_Volume_Min;
-      
-      bool adx_ok = adx[1] >= adx_threshold;
-      bool stoch_ok = (signal_candidate == 1) ? stochastic_k[1] < stoch_buy_threshold : stochastic_k[1] > stoch_sell_threshold;
-      bool volume_ok = volume[1] >= volume_threshold;
-      
-      if(adx_ok && stoch_ok && volume_ok) {
-         DebugLog("Logic Signal: " + signal_type + " ✓ (Weibull=" + DoubleToString(weibull_prob, 3) + 
-                  ", Poisson=" + DoubleToString(poisson_prob, 3) + 
-                  ", ADX=" + DoubleToString(adx[1], 1) + 
-                  ", Stoch=" + DoubleToString(stochastic_k[1], 1) + 
-                  ", Vol=" + IntegerToString((int)volume[1]) + ")");
-         return signal_candidate;
-      }
+   if(signal_candidate == 0)
+   {
+      DebugLog("Logic Signal neutral: Kein BreakRevert Trigger (Weibull=" + DoubleToString(weibull_prob, 3) +
+               ", Poisson=" + DoubleToString(poisson_prob, 3) +
+               ", H1Volatility=" + DoubleToString(h1_volatility, 5) + ")");
+      return 0;
    }
 
-   // ===== KEIN SIGNAL =====
-   string reason = "";
-   if(!breakout_signal && !mean_reversion_signal) {
-      reason = "BreakRevert Bedingungen nicht erfüllt";
-   } else if(breakout_signal) {
-      reason = "Breakout möglich aber Trend/Filter nicht erfüllt";
-   } else if(mean_reversion_signal) {
-      reason = "Mean Reversion möglich aber Trend/Filter nicht erfüllt";
+   double adx_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
+   double stoch_buy_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
+   double stoch_sell_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_sell_min : Quality_Stoch_Sell_Min;
+   double volume_threshold = g_optimized_params.parameters_loaded ? g_optimized_params.volume_min : Quality_Volume_Min;
+
+   bool adx_ok = adx[1] >= adx_threshold;
+   bool stoch_ok = (signal_candidate == 1) ? stochastic_k[1] < stoch_buy_threshold : stochastic_k[1] > stoch_sell_threshold;
+   bool volume_ok = volume[1] >= volume_threshold;
+
+   if(adx_ok && stoch_ok && volume_ok)
+   {
+      g_last_logic_filters_pass = true;
+      DebugLog("Logic Signal bestätigt: " + signal_type + " | ADX=" + DoubleToString(adx[1], 1) +
+               " >= " + DoubleToString(adx_threshold, 1) +
+               ", Stoch=" + DoubleToString(stochastic_k[1], 1) +
+               (signal_candidate == 1 ? " < " + DoubleToString(stoch_buy_threshold, 1)
+                                      : " > " + DoubleToString(stoch_sell_threshold, 1)) +
+               ", Vol=" + IntegerToString((int)volume[1]) +
+               " >= " + IntegerToString((int)volume_threshold));
+      return signal_candidate;
    }
-   
-   DebugLog("Logic Signal: KEIN SIGNAL - " + reason + 
-            " (Weibull=" + DoubleToString(weibull_prob, 3) + 
-            ", Poisson=" + DoubleToString(poisson_prob, 3) + 
-            ", ADX=" + DoubleToString(adx[1], 1) + 
-            ", Stoch=" + DoubleToString(stochastic_k[1], 1) + 
+
+   string reason = "";
+   if(!adx_ok)
+      reason += "ADX";
+   if(!stoch_ok)
+      reason += (StringLen(reason) > 0 ? "+Stoch" : "Stoch");
+   if(!volume_ok)
+      reason += (StringLen(reason) > 0 ? "+Volume" : "Volume");
+
+   g_last_logic_filter_reason = reason;
+   DebugLog("Logic Signal blockiert (" + reason + "): " + signal_type +
+            " | ADX=" + DoubleToString(adx[1], 1) +
+            ", Stoch=" + DoubleToString(stochastic_k[1], 1) +
             ", Vol=" + IntegerToString((int)volume[1]) + ")");
-   
    return 0;
 }
 
@@ -1778,6 +2445,8 @@ bool LoadOptimizedParameters() {
    g_optimized_params.stoch_buy_max = Quality_Stoch_Buy_Max;
    g_optimized_params.stoch_sell_min = Quality_Stoch_Sell_Min;
    g_optimized_params.volume_min = Quality_Volume_Min;
+   g_optimized_params.breakout_threshold = Breakout_Threshold;
+   g_optimized_params.mean_reversion_threshold = Mean_Reversion_Threshold;
    g_optimized_params.parameters_loaded = false;
    
    string file_name = "rules_" + _Symbol + ".txt";
@@ -1832,6 +2501,22 @@ bool LoadOptimizedParameters() {
          found_optimized = true;
          Print("📊 [OPTIMIZATION] Volume_Min: ", g_optimized_params.volume_min);
       }
+      else if(StringFind(line, "Breakout_Threshold:") == 0) {
+         string value_str = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(value_str);
+         StringTrimRight(value_str);
+         g_optimized_params.breakout_threshold = StringToDouble(value_str);
+         found_optimized = true;
+         Print("📊 [OPTIMIZATION] Breakout_Threshold: ", g_optimized_params.breakout_threshold);
+      }
+      else if(StringFind(line, "Mean_Reversion_Threshold:") == 0) {
+         string value_str = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(value_str);
+         StringTrimRight(value_str);
+         g_optimized_params.mean_reversion_threshold = StringToDouble(value_str);
+         found_optimized = true;
+         Print("📊 [OPTIMIZATION] Mean_Reversion_Threshold: ", g_optimized_params.mean_reversion_threshold);
+      }
    }
    
    FileClose(file_handle);
@@ -1842,7 +2527,9 @@ bool LoadOptimizedParameters() {
       Print("   ├── ADX_Min: ", g_optimized_params.adx_min, " (input: ", ADX_Min, ")");
       Print("   ├── Stoch_Buy_Max: ", g_optimized_params.stoch_buy_max, " (input: ", Quality_Stoch_Buy_Max, ")");
       Print("   ├── Stoch_Sell_Min: ", g_optimized_params.stoch_sell_min, " (input: ", Quality_Stoch_Sell_Min, ")");
-      Print("   └── Volume_Min: ", g_optimized_params.volume_min, " (input: ", Quality_Volume_Min, ")");
+      Print("   ├── Volume_Min: ", g_optimized_params.volume_min, " (input: ", Quality_Volume_Min, ")");
+      Print("   └── BreakRevert Thresholds: Breakout>", DoubleToString(g_optimized_params.breakout_threshold, 3),
+            ", Mean<", DoubleToString(g_optimized_params.mean_reversion_threshold, 3), ")");
    } else {
       Print("⚠️ [OPTIMIZATION] No optimized parameters found in rules file - using input values");
    }
@@ -1859,6 +2546,7 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
       last_rules_status = "Rules Datei nicht gefunden: " + file_name;
       rule_count = 0;
       global_tp_atr = 0.0;
+      global_tp_mode = "atr";
       global_sl_type = "";
       global_sl_dist = 0.0;
       global_win_rate = 0.0;
@@ -1872,6 +2560,7 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
    tree_node_count = 0;
    int depth_nodes[];
    ArrayResize(depth_nodes, 0);
+   global_tp_mode = "atr";
 
    while(!FileIsEnding(file_handle)) {
       string line = FileReadString(file_handle);
@@ -1882,6 +2571,20 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
       if(StringFind(line, "TP:") >= 0) {
          global_tp_atr = StringToDouble(StringSubstr(line, StringFind(line, ":") + 1));
          DebugLog("LoadRules: TP=" + DoubleToString(global_tp_atr, 2));
+      }
+      if(StringFind(line, "TP_Mode:") >= 0) {
+         string mode_value = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(mode_value);
+         StringTrimRight(mode_value);
+         StringToLower(mode_value);
+         if(StringLen(mode_value) > 0)
+         {
+            if(mode_value == "swing")
+               global_tp_mode = "swing";
+            else
+               global_tp_mode = "atr";
+         }
+         DebugLog("LoadRules: TP_Mode=" + mode_value);
       }
       if(StringFind(line, "SL:") >= 0) {
          string sl_value = StringSubstr(line, StringFind(line, ":") + 2);
@@ -1919,8 +2622,8 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
          rule_count++;
       }
       
-      // === GOLDJUNGE DECISION TREE PARSER ===
-      // Parse Decision Tree Rules (adaptiert von Ray-KI-BotV5)
+      // === SHARROW DECISION TREE PARSER ===
+      // Parse Decision Tree Rules (adaptiert von LegacyBotV5)
       if(StringFind(line, "|---") >= 0) {
          int content_start = 0;
          int indent = GetDecisionTreeIndent(line, content_start);
@@ -2148,7 +2851,7 @@ void CloseTradeOnNewsFlip() {
    if(CheckNewsFlip()) {
       double current_profit = PositionGetDouble(POSITION_PROFIT);
       if(trade.PositionClose(_Symbol)) {
-         Print("GOLDJUNGE NEWS-CLOSE: ", _Symbol, " geschlossen bei News-Flip, Profit: ", DoubleToString(current_profit, 2), " ", account_currency);
+         Print("SHARROW NEWS-CLOSE: ", _Symbol, " geschlossen bei News-Flip, Profit: ", DoubleToString(current_profit, 2), " ", account_currency);
          
          // Reset Trade-Sentiment nach erfolgreichem Close
          trade_entry_sentiment = 0;
@@ -2261,10 +2964,66 @@ bool IsCooldownActive(string &reason)
    return false;
 }
 
+void ResetTrailingExtrema()
+{
+   g_trailing_highest_price = 0.0;
+   g_trailing_lowest_price = 0.0;
+   g_trailing_position_type = -1;
+   g_last_trailing_phase = 0;
+}
+
+void UpdateTrailingExtrema()
+{
+   if(!PositionSelect(_Symbol))
+   {
+      ResetTrailingExtrema();
+      return;
+   }
+
+   int position_type = (int)PositionGetInteger(POSITION_TYPE);
+   double entry_price = PositionGetDouble(POSITION_PRICE_OPEN);
+   double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
+
+   if(position_type != g_trailing_position_type ||
+      g_trailing_highest_price <= 0.0 ||
+      g_trailing_lowest_price <= 0.0)
+   {
+      g_trailing_highest_price = entry_price;
+      g_trailing_lowest_price = entry_price;
+      g_trailing_position_type = position_type;
+   }
+
+   if(position_type == POSITION_TYPE_BUY)
+   {
+      if(entry_price > g_trailing_highest_price)
+         g_trailing_highest_price = entry_price;
+      if(entry_price < g_trailing_lowest_price || g_trailing_lowest_price <= 0.0)
+         g_trailing_lowest_price = entry_price;
+
+      if(current_price > g_trailing_highest_price)
+         g_trailing_highest_price = current_price;
+      if(current_price < g_trailing_lowest_price)
+         g_trailing_lowest_price = current_price;
+   }
+   else if(position_type == POSITION_TYPE_SELL)
+   {
+      if(entry_price < g_trailing_lowest_price || g_trailing_lowest_price <= 0.0)
+         g_trailing_lowest_price = entry_price;
+      if(entry_price > g_trailing_highest_price)
+         g_trailing_highest_price = entry_price;
+
+      if(current_price < g_trailing_lowest_price)
+         g_trailing_lowest_price = current_price;
+      if(current_price > g_trailing_highest_price)
+         g_trailing_highest_price = current_price;
+   }
+}
+
 void ResetBreakEvenAnchor()
 {
    g_break_even_entry_price = 0.0;
    g_break_even_position_type = -1;
+   ResetTrailingExtrema();
 }
 
 void UpdateBreakEvenAnchor()
@@ -2304,112 +3063,6 @@ void UpdateBreakEvenAnchor()
    }
 }
 
-void HandleBreakEven(double atr_value)
-{
-   if(!EnableBreakEven)
-      return;
-
-   if(!PositionSelect(_Symbol))
-   {
-      ResetBreakEvenAnchor();
-      return;
-   }
-
-   int position_type = (int)PositionGetInteger(POSITION_TYPE);
-   if(g_break_even_position_type != position_type)
-   {
-      g_break_even_entry_price = 0.0;
-      g_break_even_position_type = position_type;
-   }
-
-   double entry_price = g_break_even_entry_price > 0.0 ? g_break_even_entry_price : PositionGetDouble(POSITION_PRICE_OPEN);
-   double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
-   double current_sl = PositionGetDouble(POSITION_SL);
-   double current_tp = PositionGetDouble(POSITION_TP);
-   double tp_for_modify = (current_tp <= 0.0) ? EMPTY_VALUE : current_tp;
-   double current_profit = PositionGetDouble(POSITION_PROFIT);
-
-   double price_diff = (position_type == POSITION_TYPE_BUY) ? (current_price - entry_price) : (entry_price - current_price);
-   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
-   double trigger_atr = (BreakEvenTriggerATR > 0.0 && atr_value > 0.0) ? BreakEvenTriggerATR * atr_value : 0.0;
-   double trigger_pips = (BreakEvenTriggerPips > 0.0 && pip > 0.0) ? BreakEvenTriggerPips * pip : 0.0;
-   bool atr_reached = (trigger_atr > 0.0) && (price_diff >= trigger_atr);
-   bool pip_reached = (trigger_pips > 0.0) && (price_diff >= trigger_pips);
-   bool money_reached = (BreakEvenTriggerMoney > 0.0) && (current_profit >= BreakEvenTriggerMoney);
-
-   if(!(atr_reached || pip_reached || money_reached))
-      return;
-
-   if(price_diff <= 0.0 && current_profit <= 0.0)
-      return;
-
-   double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double offset_price = MathMax(BreakEvenOffsetPips * pip, stop_level_points * _Point);
-   if(offset_price <= 0)
-      offset_price = pip > 0.0 ? pip : _Point;
-
-   double new_sl = (position_type == POSITION_TYPE_BUY) ? entry_price + offset_price : entry_price - offset_price;
-
-   bool needs_update = false;
-   if(position_type == POSITION_TYPE_BUY)
-   {
-      if(current_sl <= 0 || current_sl < new_sl - _Point / 2.0)
-         needs_update = true;
-   }
-   else
-   {
-      if(current_sl <= 0 || current_sl > new_sl + _Point / 2.0)
-         needs_update = true;
-   }
-
-   if(!needs_update)
-      return;
-
-   string trigger_info = "";
-   if(atr_reached)
-      trigger_info += "ATR";
-   if(pip_reached)
-      trigger_info += (StringLen(trigger_info) > 0 ? "+PIPS" : "PIPS");
-   if(money_reached)
-      trigger_info += (StringLen(trigger_info) > 0 ? "+MONEY" : "MONEY");
-
-   double diff_pips = (pip > 0.0) ? price_diff / pip : 0.0;
-
-   if(trade.PositionModify(_Symbol, new_sl, tp_for_modify))
-   {
-      string details = StringFormat("type=%s entry=%.5f current=%.5f new_sl=%.5f tp=%.5f profit=%.2f diff=%.2fpips trigger=%s",
-                                    position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                                    entry_price,
-                                    current_price,
-                                    new_sl,
-                                    current_tp,
-                                    current_profit,
-                                    diff_pips,
-                                    trigger_info);
-      StateLog("BREAK_EVEN", details);
-      Print("BREAK-EVEN aktiviert: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
-            " SL→", DoubleToString(new_sl, _Digits),
-            " [", trigger_info, "]");
-   }
-   else
-   {
-      int err = GetLastError();
-      string err_msg = StringFormat("type=%s entry=%.5f current=%.5f attempted_sl=%.5f tp=%.5f profit=%.2f trigger=%s diff=%.2fpips error=%d",
-                                   position_type == POSITION_TYPE_BUY ? "BUY" : "SELL",
-                                   entry_price,
-                                   current_price,
-                                   new_sl,
-                                   current_tp,
-                                   current_profit,
-                                   trigger_info,
-                                   diff_pips,
-                                   err);
-      StateLog("BREAK_EVEN_FAIL", err_msg);
-      Print("BREAK-EVEN FEHLGESCHLAGEN: ", _Symbol, " ", (position_type == POSITION_TYPE_BUY ? "BUY" : "SELL"),
-            " SL", DoubleToString(new_sl, _Digits), " -> Error ", err);
-      ResetLastError();
-   }
-}
 
 // ===== DECISION TREE EVALUATION ENGINE =====
 // Evaluates simplified decision tree based on 5-6 features
@@ -2456,7 +3109,7 @@ int EvaluateDecisionTree(double stochastic, double adx, double atr, double weibu
 }
 
 // ===== RECURSIVE TREE TRAVERSAL ENGINE =====
-// Core recursive function (adaptiert von Ray-KI-BotV5 für Sharrow Features)
+// Core recursive function (adaptiert von LegacyBotV5 für Sharrow Features)
 int EvaluateGoldTreeRecursive(double stochastic, double adx, double atr, double weibull_prob, double poisson_prob, double volume, int node_index = 0) {
    // Validation
    if(node_index >= tree_node_count || node_index < 0) {
@@ -2601,7 +3254,7 @@ int GetRulesSignal() {
    return rules_signal;
 }
 
-// ===== FINALE SIGNAL-LOGIK - GOLDJUNGE SIGNAL-SOURCE SYSTEM =====
+// ===== FINALE SIGNAL-LOGIK - SHARROW SIGNAL-SOURCE SYSTEM =====
 string DescribeSignalMode(ENUM_SIGNAL_MODE mode) {
    switch(mode) {
       case SIGNAL_A_ALLE_SYNCHRON: return "A: Alle Signale übereinstimmen";
@@ -2621,7 +3274,9 @@ int GetFinalSignal(int rule_signal,
                    int news_signal,
                    double rule_win_rate,
                    string adx_strength,
-                   ENUM_SIGNAL_MODE mode) {
+                   ENUM_SIGNAL_MODE mode,
+                   bool rule_filters_ok,
+                   string rule_filter_reason) {
    string mode_label = DescribeSignalMode(mode);
    bool news_available = news_proved;
    int direction = 0;
@@ -2660,6 +3315,10 @@ int GetFinalSignal(int rule_signal,
             DebugLog("KEIN SIGNAL [" + mode_label + "]: News widersprechen Rules (Rules=" + IntegerToString(rule_signal) + ", News=" + IntegerToString(news_signal) + ")");
             return 0;
          }
+         if(!rule_filters_ok) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: Quality Filter blockieren Rules (" + rule_filter_reason + ")");
+            return 0;
+         }
          direction = rule_signal;
          break;
 
@@ -2674,6 +3333,10 @@ int GetFinalSignal(int rule_signal,
          }
          if(news_signal != 0 && news_signal != rule_signal) {
             DebugLog("KEIN SIGNAL [" + mode_label + "]: News widersprechen Rules (Rules=" + IntegerToString(rule_signal) + ", News=" + IntegerToString(news_signal) + ")");
+            return 0;
+         }
+         if(!rule_filters_ok) {
+            DebugLog("KEIN SIGNAL [" + mode_label + "]: Quality Filter blockieren Rules (" + rule_filter_reason + ")");
             return 0;
          }
          direction = rule_signal;
@@ -2764,54 +3427,12 @@ int GetFinalSignal(int rule_signal,
 
 // Signalregel-Status ermitteln (Prio: BreakRevert → ADX → Volume → Stochastic → News/Rules Konflikt)
 string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_signal, double stochastic_k, double volume, double adx) {
-   
-   // ROHEN BreakRevert Status ermitteln (vor Filtern!)
-   // Dazu müssen wir die BreakRevert-Logik ohne Filter ausführen
-   double weibull_prob = m_weibull_values.Total() > 0 ? m_weibull_values.At(m_weibull_values.Total() - 1) : 0.5;
-   double poisson_prob = m_poisson_values.Total() > 0 ? m_poisson_values.At(m_poisson_values.Total() - 1) : 0.5;
-   
-   double h1_min = m_close_prices_h1.Total() > 0 ? m_close_prices_h1[0] : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   for(int i = 1; i < m_close_prices_h1.Total(); i++) {
-      if(m_close_prices_h1[i] < h1_min) h1_min = m_close_prices_h1[i];
-   }
-   double h1_max = m_close_prices_h1.Total() > 0 ? m_close_prices_h1[0] : SymbolInfoDouble(_Symbol, SYMBOL_BID);
-   for(int i = 1; i < m_close_prices_h1.Total(); i++) {
-      if(m_close_prices_h1[i] > h1_max) h1_max = m_close_prices_h1[i];
-   }
-   double h1_volatility = h1_max - h1_min;
-   double h1_trend = m_close_prices_h1.Total() >= 2 ? m_close_prices_h1.At(m_close_prices_h1.Total() - 1) - m_close_prices_h1.At(0) : 0;
-   
-   // BREAKOUT vs MEAN REVERSION bestimmen
-   bool breakout_signal = weibull_prob > Mean_Reversion_Threshold && 
-                         poisson_prob > Breakout_Threshold &&
-                         h1_volatility > 10 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   
-   bool mean_reversion_signal = weibull_prob < Mean_Reversion_Threshold && 
-                               MathAbs(h1_trend) < 20 * SymbolInfoDouble(_Symbol, SYMBOL_POINT);
-   
-   // ORIGINAL BREAKREVERT-LOGIK (ohne Filter)
-   int raw_breakrevert_signal = 0;
-   string signal_type = "";
-   
-   // Original Logic: Breakout → BUY, Mean Reversion → SELL
-   if(breakout_signal) {
-      raw_breakrevert_signal = 1;  // BREAKOUT → BUY (Original)
-      signal_type = "BREAKOUT BUY";
-   } else if(mean_reversion_signal) {
-      raw_breakrevert_signal = -1; // MEAN REVERSION → SELL (Original)
-      signal_type = "MEAN REVERSION SELL";
-   }
-   
-   // Basis-Anzeige auch wenn kein Signal
-   string breakrevert_display = "";
-   if(raw_breakrevert_signal == 1) {
-      breakrevert_display = "BUY (" + signal_type + ")";
-   } else if(raw_breakrevert_signal == -1) {
-      breakrevert_display = "SELL (" + signal_type + ")";
-   } else {
-      breakrevert_display = "KEIN Signal";
-   }
-   
+   string breakrevert_display = "KEIN Signal";
+   if(g_last_breakrevert_signal == 1)
+      breakrevert_display = "BUY (" + (StringLen(g_last_breakrevert_type) > 0 ? g_last_breakrevert_type : "BREAKREVERT") + ")";
+   else if(g_last_breakrevert_signal == -1)
+      breakrevert_display = "SELL (" + (StringLen(g_last_breakrevert_type) > 0 ? g_last_breakrevert_type : "BREAKREVERT") + ")";
+
    // Aktuelle Threshold-Werte ermitteln (optimiert oder Input)
    double debug_adx_min = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
    double debug_stoch_buy_max = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
@@ -2823,9 +3444,9 @@ string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_sign
    string volume_status = volume >= debug_volume_min ? "+" : "-";
    string stoch_status = "";
    
-   if(raw_breakrevert_signal == 1) { // BUY Signal
+   if(g_last_breakrevert_signal == 1) { // BUY Signal
       stoch_status = "+"; // Immer + für BUY-Signal
-   } else if(raw_breakrevert_signal == -1) { // SELL Signal
+   } else if(g_last_breakrevert_signal == -1) { // SELL Signal
       stoch_status = "-"; // Immer - für SELL-Signal
    } else {
       stoch_status = "~"; // Kein Signal = neutral
@@ -2841,9 +3462,9 @@ string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_sign
    // Signalregel zusammenbauen
    string result = "BreakRevert " + breakrevert_display + " → ADX " + DoubleToString(adx, 1) + ">" + DoubleToString(debug_adx_min, 1) + " " + adx_status;
    
-   if(raw_breakrevert_signal == 1) { // BUY
+   if(g_last_breakrevert_signal == 1) { // BUY
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + "<" + DoubleToString(debug_stoch_buy_max, 1) + " " + stoch_status + news_expectation;
-   } else if(raw_breakrevert_signal == -1) { // SELL
+   } else if(g_last_breakrevert_signal == -1) { // SELL
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + ">" + DoubleToString(debug_stoch_sell_min, 1) + " " + stoch_status + news_expectation;
    } else {
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + " " + stoch_status + news_expectation;
@@ -2852,24 +3473,31 @@ string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_sign
    result += " → Volume " + DoubleToString(volume, 0) + ">" + DoubleToString(debug_volume_min, 0) + " " + volume_status;
    
    // News-Status anhängen
-   if(news_signal != 0 && raw_breakrevert_signal != 0) {
-      if(news_signal == raw_breakrevert_signal) {
-         string news_direction = raw_breakrevert_signal == 1 ? "BUY" : "SELL";
+   if(news_signal != 0 && g_last_breakrevert_signal != 0) {
+      if(news_signal == g_last_breakrevert_signal) {
+         string news_direction = g_last_breakrevert_signal == 1 ? "BUY" : "SELL";
          result += " → News " + news_direction + " Boost";
       } else {
          result += " → News Konflikt!";
       }
    }
-   
+
+    if(g_last_breakrevert_signal != 0 && !g_last_logic_filters_pass && StringLen(g_last_logic_filter_reason) > 0)
+       result += " → Filter Block (" + g_last_logic_filter_reason + ")";
+
    return result;
 }
 
 // TP/SL Info ermitteln
 string GetTPSLInfo(double tp_atr, string sl_type, double sl_dist) {
-   string tp_source = (global_tp_atr > 0) ? "Rules" : "Bot";
+   bool swing_tp = (StringCompare(global_tp_mode, "swing") == 0);
+   string tp_source = swing_tp ? "Swing" : ((global_tp_atr > 0) ? "Rules" : "Bot");
    string sl_source = (StringLen(global_sl_type) > 0) ? "Rules" : "Bot";
-   
-   string tp_info = "TP: " + DoubleToString(tp_atr, 1) + "xATR (" + tp_source + ")";
+   string tp_info;
+   if(swing_tp)
+      tp_info = "TP: Swing (" + tp_source + ")";
+   else
+      tp_info = "TP: " + DoubleToString(tp_atr, 1) + "xATR (" + tp_source + ")";
    string sl_info = "SL: ";
    if(sl_type == "extrem14") {
       sl_info += "extrem14+" + DoubleToString(sl_dist, 1) + "xATR (" + sl_source + ")";
@@ -2885,6 +3513,34 @@ void AppendReason(string &text, string reason) {
    if(StringLen(reason) == 0) return;
    if(StringLen(text) > 0) text += ", ";
    text += reason;
+}
+
+bool CheckQualityFiltersForDirection(int direction,
+                                     double adx_current,
+                                     double stoch_current,
+                                     double volume_current,
+                                     double adx_min,
+                                     double stoch_buy_max,
+                                     double stoch_sell_min,
+                                     double volume_min,
+                                     string &reason)
+{
+   reason = "";
+   if(direction == 0)
+      return false;
+
+   if(adx_current < adx_min)
+      AppendReason(reason, "ADX<" + DoubleToString(adx_min, 1));
+
+   if(direction == 1 && stoch_current >= stoch_buy_max)
+      AppendReason(reason, "Stoch>=" + DoubleToString(stoch_buy_max, 1));
+   else if(direction == -1 && stoch_current <= stoch_sell_min)
+      AppendReason(reason, "Stoch<=" + DoubleToString(stoch_sell_min, 1));
+
+   if(volume_current < volume_min)
+      AppendReason(reason, "Vol<" + DoubleToString(volume_min, 0));
+
+   return StringLen(reason) == 0;
 }
 
 // News-Signal kompakt formatieren
@@ -2965,8 +3621,14 @@ string BuildMissingConditions(int final_signal,
       }
    }
 
+   bool logic_filters_listed = false;
+
    if(require_logic && raw_logic_signal == 0) {
       AppendReason(reasons, "Logic Signal");
+      if(g_last_breakrevert_signal != 0 && StringLen(g_last_logic_filter_reason) > 0) {
+         AppendReason(reasons, "Filter " + g_last_logic_filter_reason);
+         logic_filters_listed = true;
+      }
    }
 
    if(strict_all && rule_signal != 0 && raw_logic_signal != 0 && rule_signal != raw_logic_signal) {
@@ -2991,19 +3653,22 @@ string BuildMissingConditions(int final_signal,
       AppendReason(reasons, "News Import");
    }
 
-   if(adx_current < adx_min) {
-      AppendReason(reasons, "ADX<" + DoubleToString(adx_min, 1));
-   }
+   if(!logic_filters_listed) {
+      if(adx_current < adx_min) {
+         AppendReason(reasons, "ADX<" + DoubleToString(adx_min, 1));
+      }
 
-   if(raw_logic_signal == 1 && stoch_current >= stoch_buy_max) {
-      AppendReason(reasons, "Stoch<" + DoubleToString(stoch_buy_max, 1));
-   }
-   if(raw_logic_signal == -1 && stoch_current <= stoch_sell_min) {
-      AppendReason(reasons, "Stoch>" + DoubleToString(stoch_sell_min, 1));
-   }
+      int stoch_reference = raw_logic_signal != 0 ? raw_logic_signal : g_last_breakrevert_signal;
+      if(stoch_reference == 1 && stoch_current >= stoch_buy_max) {
+         AppendReason(reasons, "Stoch>=" + DoubleToString(stoch_buy_max, 1));
+      }
+      if(stoch_reference == -1 && stoch_current <= stoch_sell_min) {
+         AppendReason(reasons, "Stoch<=" + DoubleToString(stoch_sell_min, 1));
+      }
 
-   if(volume_current < volume_min) {
-      AppendReason(reasons, "Vol<" + DoubleToString(volume_min, 0));
+      if(volume_current < volume_min) {
+         AppendReason(reasons, "Vol<" + DoubleToString(volume_min, 0));
+      }
    }
 
    return reasons;
@@ -3244,7 +3909,7 @@ void ExportMultiTimeframes() {
 
 // Initialisierung
 int OnInit() {
-   Print("===== GOLDJUNGE v6.0 Initialisierung - SYMBOL SHOWCASE =====");
+   Print("===== SHARROW v6.0 Initialisierung - SYMBOL SHOWCASE =====");
    ENUM_TIMEFRAMES tf = Period();
 
    // 🚀 NEUE FUNKTION: Lade optimierte Parameter
@@ -3300,6 +3965,8 @@ int OnInit() {
    
    LoadRules(tf);
 
+   ResetDailyDrawdown(GetServerDayStart(TimeCurrent()), AccountInfoDouble(ACCOUNT_BALANCE));
+
    UpdateBreakEvenAnchor();
 
    // === NEWS-CLOSING KONFIGURATION ===
@@ -3330,7 +3997,7 @@ int OnInit() {
       Print("❌ FEHLER: Timer konnte nicht initialisiert werden!");
       return(INIT_FAILED);
    }
-   Print("✅ GOLDJUNGE: Timer erfolgreich auf 60 Sekunden gesetzt!");
+   Print("✅ SHARROW: Timer erfolgreich auf 60 Sekunden gesetzt!");
    
    m_close_prices_m1.Delta(0.0001);
    m_close_prices_m15.Delta(0.0001);
@@ -3339,14 +4006,15 @@ int OnInit() {
    m_poisson_values.Delta(0.0001);
    m_exponential_values.Delta(0.0001);
    
-   m_close_prices_m1.Reserve(Lookback_Period * 2);
-   m_close_prices_m15.Reserve(Lookback_Period * 2);
-   m_close_prices_h1.Reserve(Lookback_Period * 2);
-   m_weibull_values.Reserve(Lookback_Period * 2);
-   m_poisson_values.Reserve(Lookback_Period * 2);
-   m_exponential_values.Reserve(Lookback_Period * 2);
+   int reserve_size = MathMax(Lookback_Period, BREAKREVERT_MIN_LOOKBACK) * 2;
+   m_close_prices_m1.Reserve(reserve_size);
+   m_close_prices_m15.Reserve(reserve_size);
+   m_close_prices_h1.Reserve(reserve_size);
+   m_weibull_values.Reserve(reserve_size);
+   m_poisson_values.Reserve(reserve_size);
+   m_exponential_values.Reserve(reserve_size);
    
-   Print("❤️ GOLDJUNGE für Hasi's MILLIARDEN! 💸 v6.0 - AUTOMATIC NEWS SYSTEM");
+   Print("Sharrow v6.0 - Automatic News System ready");
    string asset_type = GetAssetType(_Symbol);
    Print("- Symbol: ", _Symbol, " (", asset_type, "), PipSize: ", DoubleToString(g_pip_size, 8));
    // Asset-Type automatisch bestimmen für Log
@@ -3354,7 +4022,8 @@ int OnInit() {
    Print("- Lot: ", DoubleToString(GetFinalLotSize(), 4), ", NewsType: ", auto_news_type, ", NewsFile: ", g_news_file);
    Print("- Quality Filter: ADX>", DoubleToString(ADX_Min, 0), " (stark>", DoubleToString(ADX_Strong_Min, 0), "), Stoch Buy<", DoubleToString(Quality_Stoch_Buy_Max, 0), ", Sell>", DoubleToString(Quality_Stoch_Sell_Min, 0), ", Vol>", DoubleToString(Quality_Volume_Min, 0));
    Print("- Rules System: ", (RulesIntegration ? "VOLLSTÄNDIG AKTIV (3 Regeln)" : "TEILWEISE AKTIV (nur TP/SL/Lot)"), " (rules_", _Symbol, ".txt)");
-   Print("- BreakRevert: Breakout>", DoubleToString(Breakout_Threshold, 2), ", MeanReversion<", DoubleToString(Mean_Reversion_Threshold, 2));
+   Print("- BreakRevert: Breakout>", DoubleToString(g_optimized_params.breakout_threshold, 3), 
+         ", MeanReversion<", DoubleToString(g_optimized_params.mean_reversion_threshold, 3));
    if(CasinoModeEnabled)
    {
       if(UpdateCasinoStats(true))
@@ -3384,12 +4053,12 @@ int OnInit() {
 
 // Timer (VOLLSTÄNDIGER Export, kein Import mehr bei Timeframe-Wechsel)
 void OnTimer() {
-   if(EnableDebug) Print("🔍 GOLDJUNGE TIMER CALLED at ", TimeToString(TimeLocal(), TIME_DATE|TIME_MINUTES|TIME_SECONDS));
+   if(EnableDebug) Print("🔍 SHARROW TIMER CALLED at ", TimeToString(TimeLocal(), TIME_DATE|TIME_MINUTES|TIME_SECONDS));
    ENUM_TIMEFRAMES tf = Period();
    datetime now = TimeLocal();  // RECHNERZEIT verwenden!
    MqlDateTime time_struct;
    TimeToStruct(now, time_struct);
-   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Verwende RECHNERZEIT - ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
+   if(EnableDebug) Print("🔍 DEBUG SHARROW: Verwende RECHNERZEIT - ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
    
    int day_of_week = time_struct.day_of_week;
    // FIX: Korrekte Berechnung - Montag=0, Dienstag=1, ... Sonntag=6
@@ -3397,8 +4066,8 @@ void OnTimer() {
 
    // ===== EXPORT LOGIC - SMART RHYTHM ANALYZER =====
    bool export_triggered = false;
-   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Timer reached export logic at ", TimeToString(now, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
-   if(EnableDebug) Print("🔍 DEBUG GOLDJUNGE: Checking export - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
+   if(EnableDebug) Print("🔍 DEBUG SHARROW: Timer reached export logic at ", TimeToString(now, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
+   if(EnableDebug) Print("🔍 DEBUG SHARROW: Checking export - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
    
    // Monatlicher Export-Tag hat Priorität
    if(ExportMonthDay != MONTH_DAY_OFF && time_struct.day == ExportMonthDay && 
@@ -3419,8 +4088,8 @@ void OnTimer() {
    bool export_already_done_today = (today_date == last_export_date_str);
    
    if(EnableDebug) {
-       Print("🔍 DEBUG GOLDJUNGE: Export triggered: ", export_triggered ? "YES" : "NO");
-       Print("🔍 DEBUG GOLDJUNGE: Today: ", today_date, ", LastExport: ", last_export_date_str, ", AlreadyDone: ", export_already_done_today ? "YES" : "NO");
+       Print("🔍 DEBUG SHARROW: Export triggered: ", export_triggered ? "YES" : "NO");
+       Print("🔍 DEBUG SHARROW: Today: ", today_date, ", LastExport: ", last_export_date_str, ", AlreadyDone: ", export_already_done_today ? "YES" : "NO");
        // Export Debug Info
        bool rhythm_trigger = IsRhythmTriggerToday(ExportInterval, days_since_monday);
        int current_time_minutes = time_struct.hour * 60 + time_struct.min;
@@ -3628,8 +4297,10 @@ bool IsMarketSafeForNewTrades() {
    return true;  // Sicher zu traden
 }
 
-// ===== HAUPTLOGIK - GOLDJUNGE v6.0 =====
+// ===== HAUPTLOGIK - SHARROW v6.0 =====
 void OnTick() {
+   bool daily_drawdown_block = CheckDailyDrawdownGuard();
+
    UpdateBreakEvenAnchor();
 
    // === TRADEACTIVE CHECK - VOLLAUTOMATISCHE KONTROLLE ===
@@ -3645,24 +4316,11 @@ void OnTick() {
    }
    
    bool night_stop_now = NightStopEnabled && IsNightStopActive();
-   if(night_stop_now)
-   {
-      if(!g_night_stop_notice_sent)
-      {
-         StateLog("NIGHT_STOP", "Night-Stop aktiv – keine Aktionen");
-         g_night_stop_notice_sent = true;
-      }
-      return;
-   }
-   g_night_stop_notice_sent = false;
 
    // === NEWS-FLIP DETECTION - Überwachung laufender Trades ===
    CloseTradeOnNewsFlip();
    SyncLastDeal();
 
-   if(IsMarginBlockActive())
-      return;
-   
    ENUM_TIMEFRAMES tf = Period();
    string tf_str = tf == PERIOD_M1 ? "M1" : tf == PERIOD_M5 ? "M5" : tf == PERIOD_M15 ? "M15" : tf == PERIOD_M30 ? "M30" : tf == PERIOD_H1 ? "H1" : "H4";
    
@@ -3686,8 +4344,22 @@ void OnTick() {
    double volume_current = (double)volume[1];
 
    g_last_atr_value = atr[1];
-   HandleBreakEven(g_last_atr_value);
    HandleTrailingStop();
+   HandleAutoCash();
+
+   if(night_stop_now)
+   {
+      if(!g_night_stop_notice_sent)
+      {
+         StateLog("NIGHT_STOP", "Night-Stop aktiv – keine neuen Trades");
+         g_night_stop_notice_sent = true;
+      }
+      return;
+   }
+   g_night_stop_notice_sent = false;
+
+   if(IsMarginBlockActive())
+      return;
 
    double close = iClose(_Symbol, tf, 1);
    if(close == 0) return;
@@ -3696,14 +4368,26 @@ void OnTick() {
    int raw_logic_signal = GetLogicSignal();  // Bereits mit ADX/Stoch/Vol-Verifikation!
    int news_signal = GetNewsSignal();
    int rule_signal = GetRulesSignal();
-   if(g_optimized_params.parameters_loaded)
-      rule_signal = raw_logic_signal;
    double rule_win_rate = global_win_rate;
 
    double threshold_adx = g_optimized_params.parameters_loaded ? g_optimized_params.adx_min : ADX_Min;
    double threshold_stoch_buy = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_buy_max : Quality_Stoch_Buy_Max;
    double threshold_stoch_sell = g_optimized_params.parameters_loaded ? g_optimized_params.stoch_sell_min : Quality_Stoch_Sell_Min;
    double threshold_volume = g_optimized_params.parameters_loaded ? g_optimized_params.volume_min : Quality_Volume_Min;
+
+   string rule_filter_reason = "";
+   bool rule_filters_ok = true;
+   if(rule_signal != 0) {
+      rule_filters_ok = CheckQualityFiltersForDirection(rule_signal,
+                                                       adx_current,
+                                                       stoch_current,
+                                                       volume_current,
+                                                       threshold_adx,
+                                                       threshold_stoch_buy,
+                                                       threshold_stoch_sell,
+                                                       threshold_volume,
+                                                       rule_filter_reason);
+   }
 
    int casino_direction = 0;
    double casino_ratio = 0.0;
@@ -3755,7 +4439,6 @@ void OnTick() {
       g_casino_median = casino_median;
       g_casino_last_reason = casino_reason;
       raw_logic_signal = casino_direction;
-      rule_signal = g_optimized_params.parameters_loaded ? raw_logic_signal : 0;
    }
    else
    {
@@ -3782,10 +4465,25 @@ void OnTick() {
       effective_mode = SIGNAL_E_LOGIC_NEWS_SCHUTZ;
    
    // ===== FINALE ENTSCHEIDUNG - 3-REGEL-SYSTEM =====
-   int final_signal = GetFinalSignal(rule_signal, raw_logic_signal, news_signal, rule_win_rate, adx_strength, effective_mode);
+   int final_signal = GetFinalSignal(rule_signal,
+                                    raw_logic_signal,
+                                    news_signal,
+                                    rule_win_rate,
+                                    adx_strength,
+                                    effective_mode,
+                                    rule_filters_ok,
+                                    rule_filter_reason);
+
+   if(daily_drawdown_block && final_signal != 0)
+   {
+      if(EnableDebug)
+         DebugLog("DRAWDOWN STOP aktiv – final_signal auf 0 gesetzt");
+      final_signal = 0;
+   }
    
    // ===== TP/SL BERECHNUNG =====
-   double tp_atr = (global_tp_atr > 0) ? global_tp_atr : GetTPMultiplier(FixedTP);
+   bool swing_tp_mode = (StringCompare(global_tp_mode, "swing") == 0);
+   double tp_atr = swing_tp_mode ? 0.0 : ((global_tp_atr > 0) ? global_tp_atr : GetTPMultiplier(FixedTP));
    double sl_dist = 0.0;
    string sl_type = (StringLen(global_sl_type) > 0) ? global_sl_type : (StringFind(GetSLVariant(FixedSL), "extrem14") >= 0 ? "extrem14" : "atr");
    
@@ -3803,7 +4501,7 @@ void OnTick() {
    // Lot-Größe berechnen
    double lot = GetFinalLotSize();
    double sl_price = 0.0;
-   double tp_price = 0.0;
+   double tp_price = EMPTY_VALUE;
    double sl_dist_val = 0.0;
    
    if(final_signal != 0) {
@@ -3849,20 +4547,24 @@ void OnTick() {
             }
          }
       }
-      // TP-Berechnung mit optionalem Live-Spread-Puffer
-      if(UseSpreadAdjustment) {
-         double live_spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point;
-         tp_price = final_signal == 1 ? 
-                    close + tp_atr * atr[1] + live_spread :  // BUY: TP weiter weg
-                    close - tp_atr * atr[1] - live_spread;   // SELL: TP weiter weg
-         if(EnableDebug) 
-            DebugLog("TP mit Spread: Live-Spread=" + DoubleToString(live_spread/_Point, 1) + " Pips, TP=" + DoubleToString(tp_price, _Digits));
+      if(!swing_tp_mode) {
+         // TP-Berechnung mit optionalem Live-Spread-Puffer
+         if(UseSpreadAdjustment) {
+            double live_spread = SymbolInfoInteger(_Symbol, SYMBOL_SPREAD) * _Point;
+            tp_price = final_signal == 1 ? 
+                       close + tp_atr * atr[1] + live_spread :  // BUY: TP weiter weg
+                       close - tp_atr * atr[1] - live_spread;   // SELL: TP weiter weg
+            if(EnableDebug) 
+               DebugLog("TP mit Spread: Live-Spread=" + DoubleToString(live_spread/_Point, 1) + " Pips, TP=" + DoubleToString(tp_price, _Digits));
+         } else {
+            tp_price = final_signal == 1 ? 
+                       close + tp_atr * atr[1] :                // BUY: Ohne Spread
+                       close - tp_atr * atr[1];                 // SELL: Ohne Spread
+            if(EnableDebug) 
+               DebugLog("TP ohne Spread: TP=" + DoubleToString(tp_price, _Digits));
+         }
       } else {
-         tp_price = final_signal == 1 ? 
-                    close + tp_atr * atr[1] :                // BUY: Ohne Spread
-                    close - tp_atr * atr[1];                 // SELL: Ohne Spread
-         if(EnableDebug) 
-            DebugLog("TP ohne Spread: TP=" + DoubleToString(tp_price, _Digits));
+         tp_price = EMPTY_VALUE;
       }
       
       // ===== DYNAMISCHE STOPS LEVEL VALIDATION =====
@@ -3873,16 +4575,12 @@ void OnTick() {
          double sl_pips_after_validation = sl_dist_val / g_pip_size;
          double sl_loss_after_validation = sl_pips_after_validation * g_pip_value_account * lot;
          if(sl_loss_after_validation > loss_limit + 0.01) {
-            sl_price = sl_price_original;
-            sl_dist_val = sl_dist_original;
-            sl_cap_applied = false;
-            StateLog("SL_CAP_FALLBACK", StringFormat("limit=%.2f loss_after=%.2f", loss_limit, sl_loss_after_validation));
+            // Broker-Minimum größer als gewünschtes Limit: akzeptiere Mindestabstand statt den alten SL zurück zu holen
+            StateLog("SL_CAP_MIN", StringFormat("limit=%.2f loss_after=%.2f", loss_limit, sl_loss_after_validation));
             if(EnableDebug) {
-               DebugLog(StringFormat("SL Fallback: Verlust %.2f (Limit %.2f) → ursprünglicher SL wiederhergestellt",
-                                     sl_loss_after_validation, loss_limit));
+               DebugLog(StringFormat("SL Cap: Broker-Mindestabstand erzwingt %.1f Pips (Verlust %.2f, Limit %.2f)",
+                                     sl_pips_after_validation, sl_loss_after_validation, loss_limit));
             }
-            ValidateStops(sl_price, tp_price, final_signal);
-            sl_dist_val = final_signal == 1 ? close - sl_price : sl_price - close;
          } else if(EnableDebug) {
             DebugLog(StringFormat("SL finalisiert: Verlust %.2f (Limit %.2f), Abstand %.1f Pips",
                                   sl_loss_after_validation, loss_limit, sl_pips_after_validation));
@@ -3993,7 +4691,7 @@ void OnTick() {
       signals_line += casino_status;
    }
 
-   Print("===== GOLDJUNGE v5.0 BERICHT =====");
+   Print("===== SHARROW v5.0 BERICHT =====");
    string bot_line = "Bot: " + _Symbol + " " + tf_str + " | Lot " + DoubleToString(lot, 2) + " (" + lot_source + ", " + DoubleToString(actual_lot_value, 0) + " " + account_currency + ") | " + tpsl_info + " | " + news_type;
    if(account_too_small) bot_line += " | KONTO ZU KLEIN";
    Print(bot_line);
@@ -4020,16 +4718,9 @@ void OnTick() {
       double pos_profit = PositionGetDouble(POSITION_PROFIT);
 
       string sl_flag = "";
-      if(EnableBreakEven)
+      if(TrailingStopEnabled && g_last_trailing_phase > 0)
       {
-         double stop_level_points = (double)SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-         double be_threshold = MathMax(BreakEvenOffsetPips * g_pip_size, stop_level_points * _Point) + 5 * _Point;
-         double sl_diff = MathAbs(pos_sl - pos_entry);
-         if((pos_type == POSITION_TYPE_BUY && pos_sl >= pos_entry && sl_diff <= be_threshold) ||
-            (pos_type == POSITION_TYPE_SELL && pos_sl <= pos_entry && sl_diff <= be_threshold))
-         {
-            sl_flag = " (BREAK-EVEN)";
-         }
+         sl_flag = StringFormat(" (ATR-Phase %d)", g_last_trailing_phase);
       }
 
       string position_line = StringFormat("Position: %s @%s | Kurs %s | TP %s | SL %s%s | Profit %.2f",
@@ -4065,7 +4756,8 @@ void OnTick() {
       Print("DEBUG Prices: Current ", DoubleToString(close, 2), ", TP ", DoubleToString(tp_price, 2), ", SL ", DoubleToString(sl_price, 2));
       Print("DEBUG BreakRevert: Weibull ", DoubleToString(m_weibull_values.Total() > 0 ? m_weibull_values.At(m_weibull_values.Total() - 1) : 0, 3), 
             ", Poisson ", DoubleToString(m_poisson_values.Total() > 0 ? m_poisson_values.At(m_poisson_values.Total() - 1) : 0, 3));
-      Print("DEBUG Thresholds: Breakout>", DoubleToString(Breakout_Threshold, 2), ", MeanReversion<", DoubleToString(Mean_Reversion_Threshold, 2));
+      Print("DEBUG Thresholds: Breakout>", DoubleToString(g_optimized_params.breakout_threshold, 3), 
+            ", MeanReversion<", DoubleToString(g_optimized_params.mean_reversion_threshold, 3));
       Print("DEBUG Memory: M1 Data ", IntegerToString(m_close_prices_m1.Total()), ", M15 Data ", IntegerToString(m_close_prices_m15.Total()), 
             ", H1 Data ", IntegerToString(m_close_prices_h1.Total()));
       Print("DEBUG Timeframe: aktuell=", tf_str, ", H1 Trading=", is_h1_timeframe ? "JA" : "NEIN");
@@ -4202,7 +4894,7 @@ void OnTick() {
          }
 
          if(order_success) {
-            Print("GOLDJUNGE BUY ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
+            Print("SHARROW BUY ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
                   ", TP=", DoubleToString(tp_for_order, 5), ", SL=", DoubleToString(sl_price, 5));
             Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
                   ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
@@ -4257,7 +4949,7 @@ void OnTick() {
          }
 
          if(order_success) {
-            Print("GOLDJUNGE SELL ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
+            Print("SHARROW SELL ausgeführt: ", _Symbol, " ", tf_str, ", Lot=", DoubleToString(lot, 4), 
                   ", TP=", DoubleToString(tp_for_order, 5), ", SL=", DoubleToString(sl_price, 5));
             Print("ORDER OK: Retcode=", (int)trade.ResultRetcode(), " (", trade.ResultRetcodeDescription(), ")",
                   ", Order=", (long)trade.ResultOrder(), ", Deal=", (long)trade.ResultDeal());
@@ -4289,7 +4981,7 @@ void OnDeinit(const int reason) {
    
    // Quality Filter Statistiken ausgeben (Counter für interne Verwendung)
    if(quality_signals_total > 0) {
-      Print("===== GOLDJUNGE v6.0 FINAL STATISTICS (DEBUG) =====");
+      Print("===== SHARROW v6.0 FINAL STATISTICS (DEBUG) =====");
       Print("Quality Filter Performance (Internal Counters):");
       Print("- Total BreakRevert Signals: ", IntegerToString(quality_signals_total));
       Print("- Passed Quality Filter: ", IntegerToString(quality_signals_passed), " (", DoubleToString((double)quality_signals_passed/quality_signals_total*100, 1), "%)");
@@ -4300,6 +4992,6 @@ void OnDeinit(const int reason) {
       Print("- News Boost Confirms: ", IntegerToString(quality_bonus_confirms));
       Print("===== Bot gestoppt, VOLLSTÄNDIGER Export Fix funktioniert! =====");
    } else {
-      Print("===== GOLDJUNGE v6.0 gestoppt =====");
+      Print("===== SHARROW v6.0 gestoppt =====");
    }
 }

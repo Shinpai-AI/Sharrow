@@ -102,6 +102,36 @@ def get_rule_parameter_options(config: Dict) -> Tuple[List[float], List[str]]:
     return tp_candidates, sl_variants
 
 
+def get_symbol_tp_settings(config: Dict, symbol: str) -> Dict[str, object]:
+    symbols_block = config.get("symbols", {}) if isinstance(config, dict) else {}
+    entry = symbols_block.get(symbol) or symbols_block.get(symbol.upper())
+    if not isinstance(entry, dict):
+        return {}
+    tp_cfg = entry.get("tp_settings")
+    if not isinstance(tp_cfg, dict):
+        return {}
+    atr_multiplier = float(tp_cfg.get("atr_multiplier", 0.0) or 0.0)
+    swing = bool(tp_cfg.get("swing", False))
+    return {"atr_multiplier": atr_multiplier, "swing": swing}
+
+
+def apply_symbol_tp_settings(rule_info: Dict[str, object], config: Dict, symbol: str) -> None:
+    tp_config = get_symbol_tp_settings(config, symbol)
+    if not tp_config:
+        rule_info.setdefault("tp_mode", "atr")
+        return
+    swing = bool(tp_config.get("swing", False))
+    atr_multiplier = float(tp_config.get("atr_multiplier", 0.0) or 0.0)
+    if swing:
+        rule_info["tp_mode"] = "swing"
+        rule_info["tp"] = 0.0
+    elif atr_multiplier > 0.0:
+        rule_info["tp_mode"] = "atr"
+        rule_info["tp"] = atr_multiplier
+    else:
+        rule_info.setdefault("tp_mode", "atr")
+
+
 def get_quality_defaults(config: Dict) -> Dict[str, float]:
     quality_cfg = config.get("quality_defaults") or config.get("quality") or {}
     return {
@@ -291,17 +321,21 @@ def _calibrate_thresholds(
     if df_signals.empty:
         return result
 
-    signal_hits = df_signals[df_signals["signal"] == 1].copy()
-    if signal_hits.empty:
+    signal_hits_buy = df_signals[df_signals["signal"] == 1].copy()
+    signal_hits_sell = df_signals[df_signals["signal"] == -1].copy()
+    if signal_hits_buy.empty and signal_hits_sell.empty:
         return result
 
     def _baseline() -> Dict[str, float]:
-        adx_med = float(signal_hits["adx"].median())
-        stoch_q30 = float(signal_hits["stochastic"].quantile(0.30))
-        vol_q60 = float(signal_hits["Volume"].quantile(0.60))
+        combined = pd.concat([signal_hits_buy, signal_hits_sell]) if not signal_hits_sell.empty else signal_hits_buy
+        adx_med = float(combined["adx"].median()) if not combined.empty else defaults["adx_min"]
+        stoch_buy = float(signal_hits_buy["stochastic"].quantile(0.30)) if not signal_hits_buy.empty else defaults["stoch_buy_max"]
+        stoch_sell = float(signal_hits_sell["stochastic"].quantile(0.70)) if not signal_hits_sell.empty else defaults["stoch_sell_min"]
+        vol_q60 = float(combined["Volume"].quantile(0.60)) if not combined.empty else defaults["volume_min"]
         return {
             "adx_min": max(adx_med, defaults["adx_min"] * 0.5),
-            "stoch_buy_max": min(stoch_q30, defaults["stoch_buy_max"] + 30.0),
+            "stoch_buy_max": min(stoch_buy, defaults["stoch_buy_max"] + 30.0),
+            "stoch_sell_min": max(stoch_sell, defaults["stoch_sell_min"] - 10.0),
             "volume_min": max(vol_q60, defaults["volume_min"] * 0.4),
         }
 
@@ -311,11 +345,17 @@ def _calibrate_thresholds(
 
     def _evaluate(combo: Dict[str, float]) -> Tuple[float, float, int, float]:
         gated = df_signals.copy()
-        mask = gated["signal"] == 1
-        mask &= gated["adx"] >= combo["adx_min"]
-        mask &= gated["stochastic"] <= combo["stoch_buy_max"]
-        mask &= gated["Volume"] >= combo["volume_min"]
-        gated.loc[~mask, "signal"] = 0
+        buy_mask = gated["signal"] == 1
+        buy_mask &= gated["adx"] >= combo["adx_min"]
+        buy_mask &= gated["stochastic"] <= combo["stoch_buy_max"]
+        buy_mask &= gated["Volume"] >= combo["volume_min"]
+
+        sell_mask = gated["signal"] == -1
+        sell_mask &= gated["adx"] >= combo["adx_min"]
+        sell_mask &= gated["stochastic"] >= combo["stoch_sell_min"]
+        sell_mask &= gated["Volume"] >= combo["volume_min"]
+
+        gated.loc[~(buy_mask | sell_mask), "signal"] = 0
 
         tp_candidates, sl_variants = get_rule_parameter_options(config)
         tp_val = tp_candidates[0] if tp_candidates else 1.0
@@ -337,6 +377,8 @@ def _calibrate_thresholds(
     adx_cap = float(config.get("quality", {}).get("adx_cap", defaults["adx_min"] + 25))
     stoch_floor = float(config.get("quality", {}).get("stoch_buy_floor", max(5.0, defaults["stoch_buy_max"] - 40)))
     stoch_cap = float(config.get("quality", {}).get("stoch_buy_cap", min(90.0, defaults["stoch_buy_max"] + 40)))
+    stoch_sell_floor = float(config.get("quality", {}).get("stoch_sell_floor", max(50.0, defaults["stoch_sell_min"] - 30.0)))
+    stoch_sell_cap = float(config.get("quality", {}).get("stoch_sell_cap", min(99.0, defaults["stoch_sell_min"] + 20.0)))
     vol_floor = float(config.get("quality", {}).get("volume_floor", defaults["volume_min"] * 0.3))
     vol_cap = float(config.get("quality", {}).get("volume_cap", defaults["volume_min"] * 8))
 
@@ -360,6 +402,7 @@ def _calibrate_thresholds(
                 combo = {
                     "adx_min": adx_value,
                     "stoch_buy_max": stoch_value,
+                    "stoch_sell_min": _clamp(baseline["stoch_sell_min"], stoch_sell_floor, stoch_sell_cap),
                     "volume_min": volume_value,
                 }
 
@@ -379,7 +422,10 @@ def _calibrate_thresholds(
     best_combo["volume_min"] = _clamp(best_combo["volume_min"], vol_floor, vol_cap)
 
     result.update(best_combo)
-    result["stoch_sell_min"] = defaults["stoch_sell_min"]
+    result["stoch_sell_min"] = best_combo.get(
+        "stoch_sell_min",
+        _clamp(baseline["stoch_sell_min"], stoch_sell_floor, stoch_sell_cap),
+    )
 
     if best_profit > -np.inf and best_total >= min_trades:
         result["method"] = "calibrated"
@@ -418,7 +464,44 @@ def compute_intelligent_parameters(
             "stoch_sell_min": defaults["stoch_sell_min"],
             "volume_min": defaults["volume_min"],
         }
+    break_cfg = _calculate_breakrevert_thresholds(df_signals, config)
+    calibrated["breakout_threshold"] = break_cfg["breakout_threshold"]
+    calibrated["mean_reversion_threshold"] = break_cfg["mean_reversion_threshold"]
     return calibrated
+
+
+def _calculate_breakrevert_thresholds(df_signals: pd.DataFrame, config: Dict) -> Dict[str, float]:
+    break_cfg = config.get("breakrevert", {})
+    result = {
+        "breakout_threshold": float(break_cfg.get("breakout_threshold", 0.4)),
+        "mean_reversion_threshold": float(break_cfg.get("mean_reversion_threshold", 0.4)),
+    }
+
+    if df_signals is None or df_signals.empty:
+        return result
+    if "weibull_prob" not in df_signals.columns:
+        return result
+
+    valid = df_signals.dropna(subset=["signal", "weibull_prob"])
+    if valid.empty:
+        return result
+
+    buys = valid[valid["signal"] == 1]
+    sells = valid[valid["signal"] == -1]
+    min_samples = int(break_cfg.get("min_samples", 40))
+    buy_q = float(break_cfg.get("buy_quantile", 0.65))
+    sell_q = float(break_cfg.get("sell_quantile", 0.35))
+
+    if len(buys) >= max(5, min_samples // 2):
+        result["breakout_threshold"] = float(buys["weibull_prob"].quantile(buy_q))
+    if len(sells) >= max(5, min_samples // 2):
+        result["mean_reversion_threshold"] = float(sells["weibull_prob"].quantile(sell_q))
+
+    result["breakout_threshold"] = _clamp(result["breakout_threshold"], 0.05, 0.98)
+    result["mean_reversion_threshold"] = _clamp(
+        result["mean_reversion_threshold"], 0.01, result["breakout_threshold"] - 0.01
+    )
+    return result
 
 
 def add_breakrevert_features(df: pd.DataFrame, lookback: int = 24) -> pd.DataFrame:
@@ -474,8 +557,11 @@ def build_targets(df: pd.DataFrame, settings: TrainingSettings) -> pd.DataFrame:
         return df
     future_close = df["Close"].shift(-settings.hold_bars)
     df["future_return"] = (future_close - df["Close"]) / df["Close"]
-    df["target"] = (df["future_return"] >= settings.min_return).astype(int)
+    df["target"] = 0
+    df.loc[df["future_return"] >= settings.min_return, "target"] = 1
+    df.loc[df["future_return"] <= -settings.min_return, "target"] = -1
     df.dropna(inplace=True)
+    df = df[df["target"] != 0]
     return df
 
 
@@ -525,7 +611,7 @@ def evaluate_model(model, scaler, X_test, y_test, symbol: str, reports_dir: Path
     logging.info("Report für %s gespeichert: %s", symbol, report_path.name)
     return {
         "accuracy": float((preds == y_test).mean()),
-        "positives_test": int(y_test.sum()),
+        "positives_test": int((y_test != 0).sum()),
         "samples_test": int(len(y_test)),
     }
 
@@ -534,10 +620,23 @@ def build_model_signals(df: pd.DataFrame, model, scaler, threshold: float, symbo
     if df.empty:
         return df
     features = normalize_features(df[FEATURE_COLUMNS], symbol, config)
-    probabilities = model.predict_proba(scaler.transform(features))[:, 1]
+    probs = model.predict_proba(scaler.transform(features))
+    classes = list(getattr(model, "classes_", []))
+    prob_buy = probs[:, classes.index(1)] if 1 in classes else np.zeros(len(df))
+    prob_sell = probs[:, classes.index(-1)] if -1 in classes else np.zeros(len(df))
     df = df.copy()
-    df["model_prob"] = probabilities
-    df["signal"] = (probabilities >= threshold).astype(int)
+    df["model_prob_buy"] = prob_buy
+    df["model_prob_sell"] = prob_sell
+    buy_mask = prob_buy >= threshold
+    sell_mask = (prob_sell >= threshold) & (prob_sell > prob_buy)
+    buy_mask = buy_mask & (prob_buy >= prob_sell)
+    signals = np.zeros(len(df), dtype=int)
+    signals[buy_mask] = 1
+    signals[sell_mask] = -1
+    df["signal"] = signals
+    df["model_prob"] = 0.0
+    df.loc[buy_mask, "model_prob"] = prob_buy[buy_mask]
+    df.loc[sell_mask, "model_prob"] = prob_sell[sell_mask]
     return df
 
 
@@ -605,14 +704,17 @@ def simulate_trades(
     df = _prepare_extreme_levels(df, [14])
 
     trades = []
-    signals_idx = df.index[df["signal"] == 1]
+    signals_idx = df.index[df["signal"] != 0]
     if len(signals_idx) == 0:
         return 0, 0, 0.0, pd.DataFrame()
 
     for idx in signals_idx:
         entry_row = df.loc[idx]
         entry_price = entry_row["Close"]
-        tp_price, sl_price = _calculate_tp_sl_prices(entry_row, 1, tp_multiplier, sl_variant)
+        direction = int(np.sign(entry_row["signal"])) or 0
+        if direction == 0:
+            continue
+        tp_price, sl_price = _calculate_tp_sl_prices(entry_row, direction, tp_multiplier, sl_variant)
 
         subsequent = df.loc[idx:]
         exit_price = entry_price
@@ -620,23 +722,34 @@ def simulate_trades(
         for _, row in subsequent.iterrows():
             high = row["High"]
             low = row["Low"]
-            if high >= tp_price:
-                exit_price = tp_price
-                result = 1
-                break
-            if low <= sl_price:
-                exit_price = sl_price
-                result = -1
-                break
+            if direction > 0:
+                if high >= tp_price:
+                    exit_price = tp_price
+                    result = 1
+                    break
+                if low <= sl_price:
+                    exit_price = sl_price
+                    result = -1
+                    break
+            else:
+                if low <= tp_price:
+                    exit_price = tp_price
+                    result = 1
+                    break
+                if high >= sl_price:
+                    exit_price = sl_price
+                    result = -1
+                    break
         if result == 0:
             exit_price = subsequent.iloc[-1]["Close"]
 
-        profit_quote = (exit_price - entry_price) * contract_size * lot_size
+        profit_quote = (exit_price - entry_price) * contract_size * lot_size * direction
         profit_account = convert_currency(profit_quote, quote_currency, account_currency, exchange_rates)
         trades.append({
             "entry_time": idx,
             "entry_price": entry_price,
             "exit_price": exit_price,
+            "direction": direction,
             "result": result,
             "profit": profit_account,
         })
@@ -730,6 +843,7 @@ def export_rules(
         handle.write(f"Symbol: {symbol}\n")
         handle.write(f"LotSize: {rule_info['lot_size']:.4f}\n")
         handle.write(f"TP: {rule_info['tp']:.2f}\n")
+        handle.write(f"TP_Mode: {rule_info.get('tp_mode', 'atr')}\n")
         handle.write(f"SL: {rule_info['sl']}\n")
         handle.write(f"WinRate: {rule_info['winrate'] * 100:.1f}\n")
         handle.write(f"TradeActive: {str(rule_info['trade_active']).lower()}\n")
@@ -932,9 +1046,9 @@ def process_symbol(
     if df.empty:
         logging.warning("%s: Keine Daten nach Vorbereitung", symbol)
         return None
-    positives = int(df["target"].sum())
-    if positives < settings.min_positive:
-        logging.warning("%s: zu wenige positive Beispiele (%d < %d)", symbol, positives, settings.min_positive)
+    directional = int((df["target"] != 0).sum())
+    if directional < settings.min_positive:
+        logging.warning("%s: zu wenige verwertbare Beispiele (%d < %d)", symbol, directional, settings.min_positive)
         return None
     X, y = split_features_target(df, symbol, config)
     X_train, X_test, y_train, y_test = train_test_split(
@@ -984,6 +1098,7 @@ def process_symbol(
             "trade_active": trade_active,
             "lot_size": lot_size,
             "intelligent_params": intelligent_params,
+            "tp_mode": "atr",
         }
     else:
         default_tp = tp_candidates[min(len(tp_candidates) // 2, len(tp_candidates) - 1)] if tp_candidates else 1.0
@@ -1000,12 +1115,15 @@ def process_symbol(
             "trade_active": False,
             "lot_size": lot_size,
             "intelligent_params": intelligent_params,
+            "tp_mode": "atr",
         }
+
+    apply_symbol_tp_settings(rule_info, config, symbol)
 
     tree_lines = export_decision_tree_lines(model)
     signal_examples = []
     if "model_prob" in df_signals.columns:
-        top = df_signals[df_signals["signal"] == 1].nlargest(5, "model_prob")
+        top = df_signals[df_signals["signal"] != 0].nlargest(5, "model_prob")
         signal_examples = [(idx, float(row["model_prob"])) for idx, row in top.iterrows()]
 
     rules_count = export_rules(symbol, rules_dir=rules_root, rule_info=rule_info, tree_lines=tree_lines, signal_examples=signal_examples)
@@ -1018,7 +1136,7 @@ def process_symbol(
     return SymbolResult(
         symbol=symbol,
         samples=int(len(df)),
-        positives=positives,
+        positives=directional,
         rules=rules_count,
         accuracy=metrics.get("accuracy", 0.0),
         trades_total=trades_total,

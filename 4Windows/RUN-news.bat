@@ -83,10 +83,10 @@ call :log "📄 Erfolgreich kopiert: !FILES_COPIED!"
 call :log "❌ Fehler: !FILES_FAILED!"
 
 if !FILES_COPIED! GTR 0 if !FILES_FAILED! EQU 0 (
-    echo ✅ GOLDJUNGE News Workflow SUCCESSFUL!
+    echo ✅ SHARROW News Workflow SUCCESSFUL!
     exit /b 0
 ) else (
-    echo ❌ GOLDJUNGE News Workflow FAILED!
+    echo ❌ SHARROW News Workflow FAILED!
     exit /b 1
 )
 

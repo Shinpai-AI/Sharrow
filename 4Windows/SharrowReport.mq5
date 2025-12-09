@@ -1,17 +1,16 @@
 //+------------------------------------------------------------------+
-//| SharrowReport.mq5 v4.0 – Sharrow Showcase Edition               |
+//| GoldReport.mq5 v4.0 – Sharrow Showcase Edition                |
 //| Snapshot-basierter Trading Report Bot + Symbol Data Export      |
-//| Herzstück des Sharrow Trading Systems                          |
-//| Sharrow Timer Rhythm (kein Init-Export, nur Smart Scheduler)   |
-//| Coder: GPT-5                                                  |
+//| Herzstück des Sharrow Trading Systems                         |
+//| Sharrow Timer Rhythm (kein Init-Export, nur Smart Scheduler)  |
 //+------------------------------------------------------------------+
 #property copyright "Shinpai-AI"
-#property link      "https://github.com/Shinpai-AI/Sharrow"
+#property link      "https://github.com/Shinpai-AI"
 #property version   "4.00"
 #property description "Snapshot Trading Reports & Symbol Export – Sharrow Style"
 
 //+------------------------------------------------------------------+
-//| Enums - Sharrow Style                                          |
+//| Enums - Sharrow Style                                         |
 //+------------------------------------------------------------------+
 enum ENUM_INTERVAL {
    INTERVAL_OFF = 0,     // Aus
@@ -129,7 +128,7 @@ bool timer_initialized = false;
 bool snapshots_initialized = false;
 
 //+------------------------------------------------------------------+
-//| Smart Rhythm Analyzer - FROM GOLDJUNGE (SIMPLIFIED!)            |
+//| Smart Rhythm Analyzer - FROM SHARROW (SIMPLIFIED!)            |
 //+------------------------------------------------------------------+
 int GetTriggerDaysForInterval(ENUM_INTERVAL interval, int &trigger_days[]) {
    ArrayFree(trigger_days);
@@ -494,7 +493,7 @@ bool ExportSymbolData()
 }
 
 //+------------------------------------------------------------------+
-//| Expert initialization function (GOLDJUNGE STYLE - NO INIT TIMER)|
+//| Expert initialization function (SHARROW STYLE - NO INIT TIMER)|
 //+------------------------------------------------------------------+
 int OnInit()
 {
@@ -532,10 +531,10 @@ int OnInit()
     // Initialize snapshots
     InitializeSnapshots();
     
-    // GOLDJUNGE STYLE: Sofortiger Export bei Initialisierung (OHNE 10s Timer!)
+    // SHARROW STYLE: Sofortiger Export bei Initialisierung (OHNE 10s Timer!)
     if(EnableSymbolExport)
     {
-        Print("🚀 GOLDJUNGE STYLE: Sofortiger Symbol Export bei Initialisierung...");
+        Print("🚀 SHARROW STYLE: Sofortiger Symbol Export bei Initialisierung...");
         bool export_success = ExportSymbolData();
         if(export_success)
         {
@@ -594,7 +593,7 @@ void OnDeinit(const int reason)
 }
 
 //+------------------------------------------------------------------+
-//| Timer function - GOLDJUNGE STYLE (SIMPLIFIED!)                 |
+//| Timer function - SHARROW STYLE (SIMPLIFIED!)                 |
 //+------------------------------------------------------------------+
 void OnTimer()
 {
@@ -621,7 +620,7 @@ void OnTimer()
     if(true)  // Immer prüfen, unabhängig von Sekunden
     {
         if(EnableDebugMode) Print("🔍 DEBUG: Timer reached export logic check at ", TimeToString(current_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
-        // GOLDJUNGE STYLE: EINFACHE Timer-Logik
+        // SHARROW STYLE: EINFACHE Timer-Logik
         datetime now = current_time;
         MqlDateTime time_struct;
         TimeToStruct(now, time_struct);  // Verwende current_time (= TimeCurrent() von oben)
@@ -641,7 +640,7 @@ void OnTimer()
         int days_since_monday = (int)((now - last_monday) / 86400);
         if(EnableDebugMode) Print("🔍 DEBUG: Today is day ", days_since_monday, " since Monday, Time: ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
         
-        // ===== EXPORT LOGIC - GOLDJUNGE STYLE =====
+        // ===== EXPORT LOGIC - SHARROW STYLE =====
         bool export_triggered = false;
         if(EnableDebugMode) Print("🔍 DEBUG: Checking export trigger - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
         
@@ -736,7 +735,7 @@ void OnTimer()
         static bool rhythm_info_shown = false;
         if(!rhythm_info_shown) {
             string day_names[] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
-            Print("🎵 GOLDREPORT SMART RHYTHM ANALYZER gestartet:");
+            Print("🎵 SHARROW REPORT SMART RHYTHM ANALYZER gestartet:");
             Print("📅 Heute: ", day_names[days_since_monday], " (Tag ", days_since_monday, " seit Montag)");
             
             // Report Rhythm Info
@@ -919,7 +918,7 @@ string FormatSnapshotMessage(double balance_change, double equity_change, string
 }
 
 //+------------------------------------------------------------------+
-//| Helper Functions - Sharrow Style                               |
+//| Helper Functions - Sharrow Style                              |
 //+------------------------------------------------------------------+
 
 // Get Interval Text for Display

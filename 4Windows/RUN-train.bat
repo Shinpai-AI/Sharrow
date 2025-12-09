@@ -29,7 +29,7 @@ call :config_path paths.python_bin PYTHON_BIN
 if not defined PYTHON_BIN set "PYTHON_BIN=python"
 set "SYMBOL_MOVED=false"
 
->"%LOG_FILE%" (echo [%date% %time%] === GOLDJUNGE TRAIN WORKFLOW START ===)
+>"%LOG_FILE%" (echo [%date% %time%] === SHARROW TRAIN WORKFLOW START ===)
 call :log "Arbeitsverzeichnis: %SCRIPT_DIR%"
 call :log "MT5 Pfad: %MT5_PATH%"
 call :log "MT5 Files: %MQL5_FILES%"
@@ -45,7 +45,7 @@ call :copy_rules
 call :cleanup_mt5_csv
 call :summary
 
-echo GOLDJUNGE TRAIN WORKFLOW abgeschlossen! Schau in: %LOG_FILE%
+echo SHARROW TRAIN WORKFLOW abgeschlossen! Schau in: %LOG_FILE%
 pause
 exit /b 0
 

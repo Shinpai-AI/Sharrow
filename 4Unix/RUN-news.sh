@@ -120,9 +120,9 @@ log "📄 Erfolgreich kopiert: $FILES_COPIED"
 log "❌ Fehler: $FILES_FAILED"
 
 if [ $FILES_COPIED -gt 0 ] && [ $FILES_FAILED -eq 0 ]; then
-    echo "✅ GOLDJUNGE News Workflow SUCCESSFUL!"
+    echo "✅ SHARROW News Workflow SUCCESSFUL!"
     exit 0
 else
-    echo "❌ GOLDJUNGE News Workflow FAILED!"
+    echo "❌ SHARROW News Workflow FAILED!"
     exit 1
 fi

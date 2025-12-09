@@ -13,7 +13,7 @@
 ## 🧩 Systemkomponenten (flache Struktur)
 - `Sharrow/Train-KI-Bot.py` → Training & Feature-Engineering (Basis aus Sharrow-Bak, wird refactored).
 - `Sharrow/Sharrow.mq5` → MetaTrader-5-Expert-Advisor für Execution.
-- `Sharrow/SharrowReport.mq5` → Dashboard/Overlay (optional, später reaktivieren).
+- `Sharrow/GoldReport.mq5` → Dashboard/Overlay (optional, später reaktivieren).
 - `Sharrow/TKB-config.json` → Bot-Konfiguration (Modus, Risiko, Ziel, Telegram …).
 - `Sharrow/historical_*.csv` → Historische Daten mit Volumen (per `TKB-Data-Export.py`).
 - `Sharrow/news_*.json` oder `news_*.txt` → News-Snapshots (per `TKB-News-Bot.py`, ursprünglich `News-API-Bot.py`).
@@ -94,4 +94,4 @@ TODO: konkrete Schwellen aus Backtests bestimmen (`TH_volume_spike`, `ImpactBloc
 
 **Next Action:** `Sharrow-Ersteinrichtung.md` als Quickstart-Skelett schreiben & Config-Mapping vorbereiten.
 
-Bussi auf Nussi & let’s make finance magic! ✧*:･ﾟ✧(◕‿◕)✧*:･ﾟ✧
+Auf geht's – Sharrow in Produktion bringen und sauber dokumentieren!

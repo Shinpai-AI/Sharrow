@@ -146,7 +146,7 @@ main() {
         log_message "Datenbereich konnte nicht bestimmt werden"
     fi
 
-    log_message "=== GOLDJUNGE DATA REFRESH COMPLETE ==="
+    log_message "=== SHARROW DATA REFRESH COMPLETE ==="
 }
 
 main "$@"

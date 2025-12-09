@@ -199,7 +199,7 @@ summary() {
 
 main() {
     : > "$LOG_FILE"
-    log "=== GOLDJUNGE TRAIN WORKFLOW START ==="
+    log "=== SHARROW TRAIN WORKFLOW START ==="
     clean_temp_files
     SYMBOL_MOVED=false
     copy_symbol_export

@@ -40,7 +40,7 @@
 ---
 
 ## 4. MetaTrader 5 vorbereiten
-1. `Sharrow.mq5` und `SharrowReport.mq5` nach `MQL5/Experts/` kopieren.
+1. `Sharrow.mq5` und `GoldReport.mq5` nach `MQL5/Experts/` kopieren.
 2. `rules_*.txt` & `news_*.txt` in den Watch-Verzeichnis-Pfad legen (TODO: finalen Pfad definieren, z. B. `MQL5/Files/Sharrow/`).
 3. EA auf gewünschtem Chart/Timeframe (z. B. H1) aktivieren.
 4. Lot-Anpassung durch Config prüfen (Journal + Telegram beobachten).
@@ -71,4 +71,4 @@
 - Alle TODOs frühzeitig ergänzen, sobald Implementierung abgeschlossen ist.
 - Falls Dia-Module testweise genutzt werden sollen, separat dokumentieren – nicht in den Standard-Setup mischen.
 
-Bussi auf Nussi, wir bringen Sharrow zurück ins Rampenlicht! ✧*:･ﾟ✧(◕‿◕)✧*:･ﾟ✧
+Let's ship Sharrow sauber und dokumentiert. Bei Fragen: info@shinpai.de
