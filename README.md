@@ -1,4 +1,4 @@
-# 🏹 Sharrow Trading System v1.5 BETA
+# 🏹 Sharrow Trading System v2 BETA
 
 <p align="center">
   <img src="sharrow-logo.png" alt="Sharrow Logo" width="200" />
@@ -117,13 +117,13 @@ pip install numpy pandas scikit-learn scipy joblib requests
 ```bash
 # Linux/Mac (Ordner 4Unix)
 cd 4Unix
-./RUN-data-refresh.sh
+./RUN-MT5-Log-Cleaner.sh
 ./RUN-news.sh
 ./RUN-train.sh
 
 # Windows (Ordner 4Windows)
 cd 4Windows
-RUN-data-refresh.bat
+RUN-MT5-Log-Cleaner.bat
 RUN-news.bat
 RUN-train.bat
 ```
