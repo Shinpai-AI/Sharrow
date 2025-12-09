@@ -198,6 +198,6 @@ Pull Requests sind derzeit geschlossen; Bugreports, Verbesserungsvorschläge und
 
 ---
 
-**Letztes Update:** November 2025 (v1.5 Casino-Release)
+**Letztes Update:** Dezember 2025 (v2 Full-Release)
 
 *Made with ❤️ by Shinpai-AI & GPT‑5.*
