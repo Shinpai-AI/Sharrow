@@ -173,14 +173,9 @@ input double BreakEvenLockPercent = 0.5;             // Ziel-Gewinnpuffer in % d
 input double BreakEvenLockMinMoney = 0.01;           // Mindestbetrag, der gesichert wird
 input double BreakEvenLockMaxMoney = 2.0;            // Maximalbetrag, der gesichert wird (0 = kein Limit)
 
-input group "=== AUTO CASH & TARGET ==="
-input bool AutoCashEnabled = true;                   // Strukturbasierte Auto-Kasse (HH→LH bzw. LL→HL)
-input int AutoCashSwingDepth = 2;                    // Anzahl Bars links/rechts für Swing-Erkennung
-input int AutoCashLookbackBars = 120;                // Anzahl Bars für Swing-Suche
-input double AutoCashMinDiffPips = 3.0;              // Minimaler Abstand zwischen Swing-Punkten (Pips)
-input double AutoCashMinProfit = 0.0;                // Mindestprofit vor Auto-Kasse (Account-Währung)
-
 input group "=== ZEIT & GAP SCHUTZ ==="
+input bool NoMoreTradeEnabled = true;                // Ab dieser Uhrzeit keine neuen Trades mehr
+input ENUM_HOUR NoMoreTradeHour = HOUR_18;           // Cut-Off Stunde (Serverzeit) für neue Trades
 input bool NightStopEnabled = true;                   // Night-Break aktivieren (Handel pausiert nachts)
 input ENUM_HOUR NightStopStartHour = HOUR_22;         // Night-Break Startstunde (Serverzeit)
 input ENUM_HOUR NightStopEndHour   = HOUR_6;          // Night-Break Endstunde (Serverzeit)
@@ -846,9 +841,6 @@ datetime news_timer_start = 0;
 int last_news_signal = 0;
 long news_check_interval_seconds;
 string last_news_status = "", last_rules_status = "";
-datetime g_last_auto_cash_buy_signal_time = 0;
-datetime g_last_auto_cash_sell_signal_time = 0;
-
 double GetPipValuePerLot()
 {
    if(g_pip_value_account > 0.0)
@@ -1059,130 +1051,6 @@ bool GetRecentSwingLows(int depth,
    return (found >= 3);
 }
 
-bool DetectAutoCashBuy(double min_diff_pips, double &exit_price, datetime &signal_time)
-{
-   double h0 = 0.0, h1 = 0.0, h2 = 0.0;
-   datetime t0 = 0, t1 = 0, t2 = 0;
-   if(!GetRecentSwingHighs(MathMax(AutoCashSwingDepth, 2), AutoCashLookbackBars, h0, t0, h1, t1, h2, t2))
-      return false;
-
-   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
-   double min_diff_price = MathMax(min_diff_pips, 0.0) * pip;
-
-   if(t0 <= t1 || t1 <= t2)
-      return false;
-
-   bool higher_high = (h1 - h2) > min_diff_price;
-   bool lower_high = (h1 - h0) > min_diff_price;
-
-   if(higher_high && lower_high)
-   {
-      exit_price = h0;
-      signal_time = t0;
-      return true;
-   }
-   return false;
-}
-
-bool DetectAutoCashSell(double min_diff_pips, double &exit_price, datetime &signal_time)
-{
-   double l0 = 0.0, l1 = 0.0, l2 = 0.0;
-   datetime t0 = 0, t1 = 0, t2 = 0;
-   if(!GetRecentSwingLows(MathMax(AutoCashSwingDepth, 2), AutoCashLookbackBars, l0, t0, l1, t1, l2, t2))
-      return false;
-
-   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
-   double min_diff_price = MathMax(min_diff_pips, 0.0) * pip;
-
-   if(t0 <= t1 || t1 <= t2)
-      return false;
-
-   bool lower_low = (l2 - l1) > min_diff_price;
-   bool higher_low = (l0 - l1) > min_diff_price;
-
-   if(lower_low && higher_low)
-   {
-      exit_price = l0;
-      signal_time = t0;
-      return true;
-   }
-   return false;
-}
-
-void HandleAutoCash()
-{
-   if(!AutoCashEnabled)
-      return;
-
-   if(!PositionSelect(_Symbol))
-      return;
-
-   double position_profit = PositionGetDouble(POSITION_PROFIT);
-   if(position_profit <= AutoCashMinProfit)
-      return;
-
-   int position_type = (int)PositionGetInteger(POSITION_TYPE);
-   datetime position_time = (datetime)PositionGetInteger(POSITION_TIME);
-
-   double exit_price = 0.0;
-   datetime signal_time = 0;
-   double current_price = PositionGetDouble(POSITION_PRICE_CURRENT);
-   double current_sl = PositionGetDouble(POSITION_SL);
-   double current_tp = PositionGetDouble(POSITION_TP);
-   double tp_for_modify = (current_tp <= 0.0) ? EMPTY_VALUE : current_tp;
-   double sl_for_modify = (current_sl <= 0.0) ? EMPTY_VALUE : current_sl;
-   double pip = (g_pip_size > 0.0) ? g_pip_size : _Point;
-   long stops_level = SymbolInfoInteger(_Symbol, SYMBOL_TRADE_STOPS_LEVEL);
-   double min_distance = MathMax((double)stops_level * _Point, MIN_STOP_BUFFER_PIPS * pip);
-   if(min_distance <= 0.0)
-      min_distance = _Point;
-
-   if(position_type == POSITION_TYPE_BUY)
-   {
-      if(DetectAutoCashBuy(AutoCashMinDiffPips, exit_price, signal_time) && signal_time > position_time && signal_time > g_last_auto_cash_buy_signal_time)
-      {
-         double desired_tp = MathMax(exit_price, current_price + min_distance);
-         desired_tp = NormalizeDouble(desired_tp, _Digits);
-         string details = StringFormat("type=BUY target=%.5f price=%.5f profit=%.2f signal_time=%s", desired_tp, current_price, position_profit, TimeToString(signal_time, TIME_DATE|TIME_SECONDS));
-         if(trade.PositionModify(_Symbol, sl_for_modify, desired_tp))
-         {
-            StateLog("AUTO_CASH_TP", details);
-            Print("AUTO-CASH BUY TP gesetzt: ", details);
-         }
-         else
-         {
-            int err = GetLastError();
-            StateLog("AUTO_CASH_FAIL", details + StringFormat(" error=%d", err));
-            Print("AUTO-CASH BUY TP fail err ", err);
-            ResetLastError();
-         }
-         g_last_auto_cash_buy_signal_time = signal_time;
-      }
-   }
-   else if(position_type == POSITION_TYPE_SELL)
-   {
-      if(DetectAutoCashSell(AutoCashMinDiffPips, exit_price, signal_time) && signal_time > position_time && signal_time > g_last_auto_cash_sell_signal_time)
-      {
-         double desired_tp = MathMin(exit_price, current_price - min_distance);
-         desired_tp = NormalizeDouble(desired_tp, _Digits);
-         string details = StringFormat("type=SELL target=%.5f price=%.5f profit=%.2f signal_time=%s", desired_tp, current_price, position_profit, TimeToString(signal_time, TIME_DATE|TIME_SECONDS));
-         if(trade.PositionModify(_Symbol, sl_for_modify, desired_tp))
-         {
-            StateLog("AUTO_CASH_TP", details);
-            Print("AUTO-CASH SELL TP gesetzt: ", details);
-         }
-         else
-         {
-            int err = GetLastError();
-            StateLog("AUTO_CASH_FAIL", details + StringFormat(" error=%d", err));
-            Print("AUTO-CASH SELL TP fail err ", err);
-            ResetLastError();
-         }
-         g_last_auto_cash_sell_signal_time = signal_time;
-      }
-   }
-}
-
 bool CalculateTrailingStop_V2(int position_type,
                               double entry_price,
                               double current_price,
@@ -1314,6 +1182,20 @@ bool IsNightStopActive()
    return (current_minutes >= start_minutes || current_minutes < end_minutes);
 }
 
+bool IsNoMoreTradeActive()
+{
+   if(!NoMoreTradeEnabled)
+      return false;
+
+   datetime now = TimeTradeServer();
+   MqlDateTime tm;
+   TimeToStruct(now, tm);
+
+   int cutoff_hour = (int)NoMoreTradeHour;
+   cutoff_hour = MathMax(0, MathMin(23, cutoff_hour));
+   return tm.hour >= cutoff_hour;
+}
+
 datetime GetServerDayStart(datetime timestamp)
 {
    MqlDateTime tm;
@@ -1400,9 +1282,9 @@ bool CheckDailyDrawdownGuard()
    return false;
 }
 
-void HandleTrailingStop()
+void HandleTrailingStop(bool break_even_only_mode)
 {
-   if(!TrailingStopEnabled)
+   if(!TrailingStopEnabled && !break_even_only_mode)
       return;
 
    if(!PositionSelect(_Symbol))
@@ -1425,7 +1307,13 @@ void HandleTrailingStop()
                             ? position_volume * g_margin_per_lot
                             : 0.0;
 
-   if(g_last_atr_value <= 0.0 || entry_price <= 0.0)
+   if(entry_price <= 0.0)
+   {
+      g_last_trailing_phase = 0;
+      return;
+   }
+
+   if(!break_even_only_mode && g_last_atr_value <= 0.0)
    {
       g_last_trailing_phase = 0;
       return;
@@ -1449,16 +1337,33 @@ void HandleTrailingStop()
    double desired_sl = 0.0;
    int phase_used = 0;
    bool break_even_adjustment_applied = false;
-   bool trailing_valid = CalculateTrailingStop_V2(position_type,
-                                                  entry_price,
-                                                  current_price,
-                                                  highest_price,
-                                                  lowest_price,
-                                                  g_last_atr_value,
-                                                  desired_sl,
-                                                  phase_used);
+   bool trailing_valid = false;
 
-   if(trailing_valid)
+   if(!break_even_only_mode)
+   {
+      trailing_valid = CalculateTrailingStop_V2(position_type,
+                                                entry_price,
+                                                current_price,
+                                                highest_price,
+                                                lowest_price,
+                                                g_last_atr_value,
+                                                desired_sl,
+                                                phase_used);
+   }
+
+   if(break_even_only_mode)
+   {
+      if(!break_even_active)
+      {
+         g_last_trailing_phase = 0;
+         return;
+      }
+
+      desired_sl = break_even_sl;
+      phase_used = 1;
+      break_even_adjustment_applied = true;
+   }
+   else if(trailing_valid)
    {
       if(break_even_active)
       {
@@ -1702,6 +1607,7 @@ datetime margin_block_last_notice = 0;
 
 // Night-Stop Logging Guard
 bool g_night_stop_notice_sent = false;
+bool g_no_more_trade_notice_sent = false;
 double g_daily_start_balance = 0.0;
 datetime g_daily_reset_date = 0;
 bool g_daily_drawdown_stop = false;
@@ -4316,6 +4222,7 @@ void OnTick() {
    }
    
    bool night_stop_now = NightStopEnabled && IsNightStopActive();
+   bool no_more_trade_now = IsNoMoreTradeActive();
 
    // === NEWS-FLIP DETECTION - Überwachung laufender Trades ===
    CloseTradeOnNewsFlip();
@@ -4344,8 +4251,7 @@ void OnTick() {
    double volume_current = (double)volume[1];
 
    g_last_atr_value = atr[1];
-   HandleTrailingStop();
-   HandleAutoCash();
+   HandleTrailingStop(night_stop_now);
 
    if(night_stop_now)
    {
@@ -4357,6 +4263,17 @@ void OnTick() {
       return;
    }
    g_night_stop_notice_sent = false;
+
+   if(no_more_trade_now)
+   {
+      if(!g_no_more_trade_notice_sent)
+      {
+         StateLog("NOMORE_TRADE", "NomoreTrade aktiv – keine neuen Trades bis Cut-Ende");
+         g_no_more_trade_notice_sent = true;
+      }
+      return;
+   }
+   g_no_more_trade_notice_sent = false;
 
    if(IsMarginBlockActive())
       return;

@@ -6,7 +6,7 @@ Ein einziges, zentrales Config-File für Sharrow: TKB-config.json
 
 Funktionen:
   - --init                 Erstellt eine neue Grundkonfiguration
-  - --import-symbols CSV   Importiert Symbol-Parameter aus CSV (z.B. aus GoldReport/SymbolDataExport.csv)
+  - --import-symbols CSV   Importiert Symbol-Parameter aus CSV (z.B. aus SharrowReport/SymbolDataExport.csv)
   - --set key=val [...]    Setzt Felder per Dot-Path (z.B. paths.rules_dir=../rules)
   - --add-symbol SYM       Fügt ein Symbol mit Defaultparametern hinzu
   - --remove-symbol SYM    Entfernt ein Symbol
@@ -191,8 +191,83 @@ def ensure_tp_settings(cfg: dict) -> int:
                 changed += 1
     return changed
 
+
+def detect_rules_dir(cfg: dict) -> str:
+    paths_cfg = cfg.get("paths", {}) if isinstance(cfg, dict) else {}
+    raw = paths_cfg.get("rules_dir")
+    if raw:
+        expanded = os.path.expanduser(str(raw))
+        if not os.path.isabs(expanded):
+            expanded = os.path.join(ROOT_DIR, expanded)
+        return os.path.abspath(expanded)
+    return DEFAULT_RULES_DIR
+
+
+def parse_rules_tp(path: str):
+    tp_mode = None
+    tp_value = None
+    try:
+        with open(path, 'r', encoding='utf-8', errors='ignore') as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith('//'):
+                    continue
+                lower = stripped.lower()
+                if lower.startswith('tp_mode'):
+                    _, val = stripped.split(':', 1)
+                    tp_mode = val.strip().lower()
+                elif lower.startswith('tp'):
+                    _, val = stripped.split(':', 1)
+                    try:
+                        tp_value = float(val.strip())
+                    except Exception:
+                        tp_value = None
+                if tp_mode and (tp_value is not None or tp_mode == 'swing'):
+                    break
+    except Exception:
+        return None, None
+    return tp_mode, tp_value
+
+
+def sync_tp_settings_from_rules(cfg: dict, rules_dir: str):
+    symbols = cfg.get('symbols', {}) if isinstance(cfg, dict) else {}
+    if not os.path.isdir(rules_dir):
+        raise SystemExit(f"Rules-Verzeichnis nicht gefunden: {rules_dir}")
+    updated_syms = []
+    missing_rules = []
+    for sym, sym_cfg in iter_symbol_configs(symbols):
+        rules_path = os.path.join(rules_dir, f"rules_{sym}.txt")
+        if not os.path.isfile(rules_path):
+            missing_rules.append(sym)
+            continue
+        tp_mode, tp_value = parse_rules_tp(rules_path)
+        if not tp_mode:
+            continue
+        sym_cfg.setdefault("tp_settings", {"atr_multiplier": 1.0, "swing": False})
+        block = sym_cfg["tp_settings"]
+        changed = False
+        if tp_mode == 'swing':
+            if block.get("swing") is not True:
+                block["swing"] = True
+                changed = True
+            if tp_value is not None and block.get("atr_multiplier") != tp_value:
+                block["atr_multiplier"] = tp_value
+                changed = True
+        else:
+            if block.get("swing"):
+                block["swing"] = False
+                changed = True
+            if tp_value is not None and block.get("atr_multiplier") != tp_value:
+                block["atr_multiplier"] = tp_value
+                changed = True
+        if changed:
+            updated_syms.append(sym)
+    return updated_syms, missing_rules
+
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), 'TKB-config.json')
 LOG_FILE = os.path.join(os.path.dirname(__file__), 'TKB.log')
+ROOT_DIR = os.path.dirname(__file__)
+DEFAULT_RULES_DIR = ROOT_DIR
 
 
 def log_msg(message: str, *, stdout: bool = True) -> None:
@@ -217,7 +292,7 @@ def load(path=CONFIG_PATH):
 
 def default_config():
     return {
-        "project": {"name": "Sharrow AI Trader", "version": "1.5"},
+        "project": {"name": "Sharrow AI Trader", "version": "3.0"},
         "paths": {
             "mt5_path": "/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5",
             "mt5_files_subpath": "MQL5/Files",
@@ -323,6 +398,7 @@ def import_symbols(cfg, csv_path):
         quote_currency = str(quote_currency).strip().upper()
         mid_raw = (row.get('mid_price') or row.get('MidPrice') or row.get('midPrice') or row.get('Mid_Price'))
         mid_price = _f(mid_raw, None)
+        existing_entry = cfg['symbols'].get(sym, {})
         target = build_symbol_entry(
             sym,
             asset_type=asset_type,
@@ -334,6 +410,12 @@ def import_symbols(cfg, csv_path):
             contract_size=_f(row.get('ContractSize', 100000) or 100000, 100000),
             base_currency=base_currency or None,
         )
+        previous_tp = existing_entry.get("tp_settings") if isinstance(existing_entry, dict) else None
+        if isinstance(previous_tp, dict) and previous_tp:
+            merged_tp = target.get("tp_settings", {}).copy()
+            merged_tp.update({k: v for k, v in previous_tp.items() if v is not None})
+            target["tp_settings"] = merged_tp
+
         if sym in cfg['symbols']:
             updated_symbols.add(sym)
         else:
@@ -359,6 +441,7 @@ def import_symbols(cfg, csv_path):
     if exchange_updates:
         cfg['exchange_rates'] = exchange_rates
 
+    ensure_tp_settings(cfg)
     return cfg, sorted(added_symbols), sorted(updated_symbols), removed_symbols, sorted(exchange_updates)
 
 def main():
@@ -370,6 +453,7 @@ def main():
     ap.add_argument('--remove-symbol')
     ap.add_argument('--update-news-triggers', action='store_true')
     ap.add_argument('--ensure-tp-settings', action='store_true')
+    ap.add_argument('--sync-tp-from-rules', action='store_true')
     ap.add_argument('--summary', action='store_true')
     args = ap.parse_args()
 
@@ -441,6 +525,17 @@ def main():
         if count > 0:
             save(cfg)
         log_msg(f"[OK] TP-Settings geprüft/ergänzt für {count} Symbole")
+
+    if args.sync_tp_from_rules:
+        rules_dir = detect_rules_dir(cfg)
+        updated_syms, missing_rules = sync_tp_settings_from_rules(cfg, rules_dir)
+        if updated_syms:
+            save(cfg)
+        log_msg(f"[OK] TP/Swing aus Rules übernommen ({len(updated_syms)} aktualisiert, Quelle: {rules_dir})")
+        if updated_syms:
+            log_msg("    aktualisiert: " + ", ".join(sorted(updated_syms)))
+        if missing_rules:
+            log_msg("    ohne Rules-Datei: " + ", ".join(sorted(missing_rules)))
 
     if args.summary:
         summary = json.dumps({
