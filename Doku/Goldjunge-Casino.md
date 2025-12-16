@@ -1,7 +1,7 @@
-# Sharrow Casino-Modus – Arbeitsprotokoll (Stand: 2025-10-28)
+# Goldjunge Casino-Modus – Arbeitsprotokoll (Stand: 2025-10-28)
 
 ## 1. Ausgangslage
-- Sharrow v6.0 liefert im Stable-Modus hohe Trefferquoten, bricht aber seit den Chaos-Märkten (Q4 2025) weg.
+- Goldjunge v6.0 liefert im Stable-Modus hohe Trefferquoten, bricht aber seit den Chaos-Märkten (Q4 2025) weg.
 - Ziel: zuschaltbarer "Casino-Modus" für Extremphasen (hohe Intraday-Volatilität, whipsaw-Märkte).
 - Stable-Training (`Train-KI-Bot.py`) wurde angepasst:
   - Long/Short-Ziele getrennt → dreiklassige Modelle (0 flat, 1 buy, 2 sell).

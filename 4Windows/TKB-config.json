@@ -1,5 +1,6 @@
 {
-  "project": {
+    "trade_active": true,
+    "project": {
     "name": "Sharrow AI Trader",
     "version": "1.5"
   },
@@ -102,7 +103,15 @@
   },
   "rules": {
     "min_winrate": 0.45,
-    "min_trades": 40
+    "min_trades": 40,
+    "sl_variants": [
+      "atr1.0",
+      "atr1.5",
+      "atr2.0",
+      "extrem14",
+      "extrem14+0.5atr",
+      "extrem14+1.0atr"
+    ]
   },
   "data_export": {
     "lookback_years": 2,

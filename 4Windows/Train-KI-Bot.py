@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Train-KI-Bot.py
-Sharrow ML-Pipeline (Refactor 2025-09)
+Goldjunge ML-Pipeline (Refactor 2025-09)
 """
 
 import argparse
@@ -65,22 +65,6 @@ class IdentityTransformer:
         return X
 
 
-def _ensure_float_list(raw_value, fallback: List[float]) -> List[float]:
-    if raw_value is None:
-        return fallback
-    if isinstance(raw_value, list):
-        try:
-            return [float(v) for v in raw_value]
-        except (TypeError, ValueError):
-            return fallback
-    if isinstance(raw_value, str):
-        try:
-            return [float(v.strip()) for v in raw_value.split(",") if v.strip()]
-        except ValueError:
-            return fallback
-    return fallback
-
-
 def _ensure_str_list(raw_value, fallback: List[str]) -> List[str]:
     if raw_value is None:
         return fallback
@@ -95,11 +79,37 @@ def _ensure_str_list(raw_value, fallback: List[str]) -> List[str]:
     return fallback
 
 
-def get_rule_parameter_options(config: Dict) -> Tuple[List[float], List[str]]:
+def get_sl_variants(config: Dict) -> List[str]:
     rules_cfg = config.get("rules", {})
-    tp_candidates = _ensure_float_list(rules_cfg.get("tp_candidates"), [0.5, 0.7, 1.0, 1.3, 1.6, 2.0])
-    sl_variants = _ensure_str_list(rules_cfg.get("sl_variants"), ["atr1.5", "atr2.0", "extrem14+0.5atr", "extrem14+1.0atr"])
-    return tp_candidates, sl_variants
+    return _ensure_str_list(rules_cfg.get("sl_variants"), ["atr1.5", "atr2.0", "extrem14+0.5atr", "extrem14+1.0atr"])
+
+
+def build_basic_rule_info(
+    lot_size: float,
+    sl_variants: List[str],
+    tp_value: float,
+    intelligent_params: Optional[Dict[str, float]] = None,
+    trade_active: bool = False,
+    override_reason: Optional[str] = None,
+) -> Dict[str, object]:
+    default_sl = sl_variants[0] if sl_variants else "atr1.0"
+    rule_info: Dict[str, object] = {
+        "tp": tp_value,
+        "sl": default_sl,
+        "trades": 0,
+        "wins": 0,
+        "profit_window": 0.0,
+        "profit_total": 0.0,
+        "winrate": 0.0,
+        "winrate_total": 0.0,
+        "trade_active": trade_active,
+        "lot_size": lot_size,
+        "intelligent_params": intelligent_params or {},
+        "tp_mode": "atr",
+    }
+    if override_reason:
+        rule_info["override_reason"] = override_reason
+    return rule_info
 
 
 def get_symbol_tp_settings(config: Dict, symbol: str) -> Dict[str, object]:
@@ -130,6 +140,25 @@ def apply_symbol_tp_settings(rule_info: Dict[str, object], config: Dict, symbol:
         rule_info["tp"] = atr_multiplier
     else:
         rule_info.setdefault("tp_mode", "atr")
+
+
+def get_symbol_tp_multiplier(config: Dict, symbol: Optional[str], default: float = 1.0) -> float:
+    if not symbol:
+        return default
+    tp_config = get_symbol_tp_settings(config, symbol)
+    if not tp_config:
+        return default
+    atr_multiplier = float(tp_config.get("atr_multiplier", default) or default)
+    if atr_multiplier <= 0:
+        return default
+    return atr_multiplier
+
+
+def get_rule_parameter_options(config: Dict, symbol: Optional[str] = None) -> Tuple[List[float], List[str]]:
+    """Legacy helper for callers that still expect TP+SL options."""
+    sl_variants = get_sl_variants(config)
+    tp_value = get_symbol_tp_multiplier(config, symbol)
+    return [tp_value], sl_variants
 
 
 def get_quality_defaults(config: Dict) -> Dict[str, float]:
@@ -357,8 +386,8 @@ def _calibrate_thresholds(
 
         gated.loc[~(buy_mask | sell_mask), "signal"] = 0
 
-        tp_candidates, sl_variants = get_rule_parameter_options(config)
-        tp_val = tp_candidates[0] if tp_candidates else 1.0
+        sl_variants = get_sl_variants(config)
+        tp_val = get_symbol_tp_multiplier(config, symbol)
         sl_val = sl_variants[0] if sl_variants else "atr2.0"
 
         total, wins, profit, _ = simulate_trades(
@@ -772,30 +801,29 @@ def find_best_rule_parameters(
     min_trades: int,
     min_winrate: float,
     period_days: Optional[int],
-    tp_candidates: List[float],
+    tp_multiplier: float,
     sl_variants: List[str],
 ) -> Optional[Dict[str, object]]:
     best = None
-    for tp in tp_candidates:
-        for sl in sl_variants:
-            total, wins, profit, trades = simulate_trades(df, symbol, config, lot_size, tp, sl)
-            if total == 0:
-                continue
-            winrate = wins / total
-            if total < min_trades or winrate < min_winrate:
-                continue
-            score = profit
-            if best is None or score > best["score"]:
-                best = {
-                    "tp": tp,
-                    "sl": sl,
-                    "trades": total,
-                    "wins": wins,
-                    "profit": profit,
-                    "winrate": winrate,
-                    "trades_df": trades,
-                    "score": score,
-                }
+    for sl in sl_variants:
+        total, wins, profit, trades = simulate_trades(df, symbol, config, lot_size, tp_multiplier, sl)
+        if total == 0:
+            continue
+        winrate = wins / total
+        if total < min_trades or winrate < min_winrate:
+            continue
+        score = profit
+        if best is None or score > best["score"]:
+            best = {
+                "tp": tp_multiplier,
+                "sl": sl,
+                "trades": total,
+                "wins": wins,
+                "profit": profit,
+                "winrate": winrate,
+                "trades_df": trades,
+                "score": score,
+            }
     if best:
         return best
     return None
@@ -850,6 +878,9 @@ def export_rules(
         handle.write(f"Signals: {rule_info['trades']}\n")
         handle.write(f"TotalProfit: {rule_info['profit_total']:.2f}\n")
         handle.write(f"WindowProfit: {rule_info['profit_window']:.2f}\n")
+        override_reason = rule_info.get("override_reason")
+        if override_reason:
+            handle.write(f"// {override_reason}\n")
         intelligent = rule_info.get("intelligent_params") or {}
         if intelligent:
             handle.write(f"ADX_Min: {float(intelligent.get('adx_min', 0.0)):.1f}\n")
@@ -1040,8 +1071,46 @@ def process_symbol(
     settings: TrainingSettings,
     config: Dict,
     period_days: Optional[int],
+    trading_enabled: bool,
 ) -> Optional[SymbolResult]:
     logging.info("=== Starte Training für %s ===", symbol)
+    lot_size = calculate_lot_size(symbol, config)
+    sl_variants = get_sl_variants(config)
+    tp_value = get_symbol_tp_multiplier(config, symbol)
+
+    if not trading_enabled:
+        logging.info("%s: TradeActive per Config = FALSE → ML übersprungen", symbol)
+        rule_info = build_basic_rule_info(
+            lot_size=lot_size,
+            sl_variants=sl_variants,
+            tp_value=tp_value,
+            intelligent_params={},
+            trade_active=False,
+            override_reason="TradeActive=false (config override)",
+        )
+        apply_symbol_tp_settings(rule_info, config, symbol)
+        tree_lines = ["// TradeActive=false (config override) – ML deaktiviert"]
+        signal_examples: List[Tuple[pd.Timestamp, float]] = []
+        rules_count = export_rules(
+            symbol,
+            rules_dir=rules_root,
+            rule_info=rule_info,
+            tree_lines=tree_lines,
+            signal_examples=signal_examples,
+        )
+        return SymbolResult(
+            symbol=symbol,
+            samples=0,
+            positives=0,
+            rules=rules_count,
+            accuracy=0.0,
+            trades_total=0,
+            trades_won=0,
+            profit_account=0.0,
+            lot_size=lot_size,
+            winrate=0.0,
+        )
+
     df = prepare_dataset(symbol, data_root, settings)
     if df.empty:
         logging.warning("%s: Keine Daten nach Vorbereitung", symbol)
@@ -1060,9 +1129,7 @@ def process_symbol(
     model, scaler = train_model(X_train, y_train)
     metrics = evaluate_model(model, scaler, X_test, y_test, symbol, reports_dir)
     df_signals = build_model_signals(df, model, scaler, settings.rule_threshold, symbol, config)
-    tp_candidates, sl_variants = get_rule_parameter_options(config)
 
-    lot_size = calculate_lot_size(symbol, config)
     rules_cfg = config.get("rules", {})
     min_trades = int(rules_cfg.get("min_trades", 50))
     min_winrate = float(rules_cfg.get("min_winrate", 0.6))
@@ -1075,7 +1142,7 @@ def process_symbol(
         min_trades,
         min_winrate,
         period_days,
-        tp_candidates,
+        tp_value,
         sl_variants,
     )
     intelligent_params = compute_intelligent_parameters(df_signals, config, symbol)
@@ -1101,22 +1168,14 @@ def process_symbol(
             "tp_mode": "atr",
         }
     else:
-        default_tp = tp_candidates[min(len(tp_candidates) // 2, len(tp_candidates) - 1)] if tp_candidates else 1.0
-        default_sl = sl_variants[0] if sl_variants else "atr2.0"
-        rule_info = {
-            "tp": default_tp,
-            "sl": default_sl,
-            "trades": 0,
-            "wins": 0,
-            "profit_window": 0.0,
-            "profit_total": 0.0,
-            "winrate": 0.0,
-            "winrate_total": 0.0,
-            "trade_active": False,
-            "lot_size": lot_size,
-            "intelligent_params": intelligent_params,
-            "tp_mode": "atr",
-        }
+        rule_info = build_basic_rule_info(
+            lot_size=lot_size,
+            sl_variants=sl_variants,
+            tp_value=tp_value,
+            intelligent_params=intelligent_params,
+            trade_active=False,
+            override_reason=None,
+        )
 
     apply_symbol_tp_settings(rule_info, config, symbol)
 
@@ -1147,11 +1206,13 @@ def process_symbol(
     )
 
 
-def write_summary(results: List[SymbolResult], reports_dir: Path) -> None:
+def write_summary(results: List[SymbolResult], reports_dir: Path, trading_enabled: bool) -> None:
     reports_dir.mkdir(parents=True, exist_ok=True)
     summary_path = reports_dir / "training_summary.md"
     with summary_path.open("w", encoding='utf-8') as handle:
-        handle.write("# Sharrow Trainingsübersicht\n\n")
+        handle.write("# Goldjunge Trainingsübersicht\n\n")
+        if not trading_enabled:
+            handle.write("_TradeActive=false – ML deaktiviert, nur Standby-Rules erstellt._\n\n")
         if not results:
             handle.write("Keine Symbole erfolgreich trainiert.\n")
             return
@@ -1182,6 +1243,7 @@ def build_telegram_message(
     duration_minutes: float,
     period_label: str,
 ) -> str:
+    trade_active_flag = bool(config.get("trade_active", True))
     account_cfg = config.get("account", {})
     account_currency = account_cfg.get("currency", "EUR")
     balance = float(account_cfg.get("starting_balance", 0.0))
@@ -1196,8 +1258,14 @@ def build_telegram_message(
     total_profit = sum(res.profit_account for res in results)
     successful = [res for res in results if res.profit_account > 0]
 
-    lines = [
-        "🤖 Sharrow Standard",
+    lines: List[str] = []
+    if not trade_active_flag:
+        lines.extend([
+            "⚠️ TradeActive=false → Bot im Standby (nur statische Rules erstellt)",
+            ""
+        ])
+    lines.extend([
+        "🤖 Goldjunge Standard",
         "",
         f"🏦 Konto: {format_currency(balance, account_currency)}",
         f"💰 Einsatz: {format_currency(risk_amount, account_currency)}",
@@ -1210,7 +1278,7 @@ def build_telegram_message(
         f"💰 Gesamtgewinn: {format_currency(total_profit, account_currency)}",
         "",
         "💰 PROFITABLE TRADES:",
-    ]
+    ])
 
     if successful:
         for res in sorted(successful, key=lambda r: r.profit_account, reverse=True):
@@ -1275,7 +1343,7 @@ def send_telegram_summary(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Sharrow Train-KI-Bot")
+    parser = argparse.ArgumentParser(description="Goldjunge Train-KI-Bot")
     parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--rules-dir", type=Path, default=None)
@@ -1288,6 +1356,7 @@ def main():
 
     config = load_config(args.config)
     settings = extract_training_settings(config)
+    trading_enabled = bool(config.get("trade_active", True))
     symbols = list_config_symbols(config)
     if not symbols:
         logging.error("Keine Symbole in der Config gefunden")
@@ -1316,13 +1385,14 @@ def main():
             settings,
             config,
             period_days,
+            trading_enabled,
         )
         if res:
             results.append(res)
         else:
             failed_symbols.append(symbol)
 
-    write_summary(results, reports_dir)
+    write_summary(results, reports_dir, trading_enabled)
 
     duration_minutes = (time.time() - training_started) / 60.0 if results or failed_symbols else 0.0
     send_telegram_summary(config, results, failed_symbols, duration_minutes, period_label)

@@ -156,6 +156,8 @@ input bool EnableDebug = false;                        // Debug-Logs aktivieren
 input group "=== TRADE SCHUTZ & MANAGEMENT ==="
 input int CooldownMinutesAfterLoss = 5;               // Cooldown nach SL (Minuten, 0 = aus)
 input bool CooldownWaitForNewH1Bar = true;            // Nach SL neue H1-Kerze abwarten
+input bool TradeCooldownEnabled = true;               // Handelspause nach JEDEM Trade aktivieren
+input int TradeCooldownMinutes = 30;                  // Dauer der Handelpause nach Trade (Minuten)
 input bool TrailingStopEnabled = true;               // ATR-basiertes 4-Phasen Trailing aktivieren
 input double AtrTrailInitialSL = 2.0;                // Phase 1: Initialer SL = Entry ± (X × ATR)
 input double AtrTrailPhase2Trigger = 1.0;            // Phase 2 Trigger: Profit >= X × ATR
@@ -1608,6 +1610,7 @@ datetime margin_block_last_notice = 0;
 // Night-Stop Logging Guard
 bool g_night_stop_notice_sent = false;
 bool g_no_more_trade_notice_sent = false;
+bool g_daily_stop_tick_notice_sent = false;
 double g_daily_start_balance = 0.0;
 datetime g_daily_reset_date = 0;
 bool g_daily_drawdown_stop = false;
@@ -2263,8 +2266,7 @@ int GetLogicSignal() {
 
    bool breakout_sell_signal = (weibull_prob < mean_reversion_threshold) &&
                                (poisson_prob < mean_reversion_threshold) &&
-                               (h1_volatility > volatility_threshold) &&
-                               (h1_trend <= -trend_threshold);
+                               (h1_volatility > volatility_threshold);
 
    int signal_candidate = 0;
    string signal_type = "";
@@ -2552,7 +2554,8 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
             node.is_leaf = true;
             if(StringFind(content, "class: 0") >= 0) node.signal = 0;
             else if(StringFind(content, "class: 1") >= 0) node.signal = 1;
-            else if(StringFind(content, "class: 2") >= 0) node.signal = 2;
+            else if(StringFind(content, "class: -1") >= 0) node.signal = -1;
+            else if(StringFind(content, "class: 2") >= 0) node.signal = -1;
             DebugLog("ParseTree: Leaf Node - Signal=" + IntegerToString(node.signal));
          } else {
             int pos = StringFind(content, "<=");
@@ -2870,6 +2873,32 @@ bool IsCooldownActive(string &reason)
    return false;
 }
 
+bool IsTradePauseActive(string &reason)
+{
+   reason = "";
+   if(!TradeCooldownEnabled || TradeCooldownMinutes <= 0)
+      return false;
+   if(last_deal_time == 0)
+      return false;
+   if(PositionSelect(_Symbol))
+      return false;
+
+   int cooldown_seconds = TradeCooldownMinutes * 60;
+   int elapsed_seconds = (int)(TimeCurrent() - last_deal_time);
+
+   if(elapsed_seconds < cooldown_seconds)
+   {
+      int remaining = cooldown_seconds - elapsed_seconds;
+      int remaining_minutes = (remaining + 59) / 60;
+      reason = StringFormat("Trade-Pause aktiv: %d min seit letztem Trade (%s)",
+                            remaining_minutes,
+                            TimeToString(last_deal_time, TIME_MINUTES));
+      return true;
+   }
+
+   return false;
+}
+
 void ResetTrailingExtrema()
 {
    g_trailing_highest_price = 0.0;
@@ -3002,10 +3031,10 @@ int EvaluateDecisionTree(double stochastic, double adx, double atr, double weibu
       return 1;  // BUY signal
    }
    else if(breakrevert_sell && adx_strong && stoch_sell_zone && volume_ok) {
-      return 2;  // SELL signal
+      return -1; // SELL signal
    }
    else if(stochastic > 0.8) {
-      return 2;  // Strong overbought -> SELL
+      return -1; // Strong overbought -> SELL
    }
    else if(stochastic < -0.8) {
       return 1;  // Strong oversold -> BUY
@@ -3139,8 +3168,8 @@ int GetRulesSignal() {
    
    // Convert tree result to signal (0=no signal, 1=buy, 2=sell)
    int rules_signal = 0;
-   if(tree_result == 1) rules_signal = 1;      // BUY
-   else if(tree_result == 2) rules_signal = -1; // SELL
+   if(tree_result == 1) rules_signal = 1;       // BUY
+   else if(tree_result == -1) rules_signal = -1; // SELL
 
    // DEBUG für Rules Signal Diagnose (nur bei EnableDebug)
    if(EnableDebug && rules_signal == 0) {
@@ -4206,6 +4235,16 @@ bool IsMarketSafeForNewTrades() {
 // ===== HAUPTLOGIK - SHARROW v6.0 =====
 void OnTick() {
    bool daily_drawdown_block = CheckDailyDrawdownGuard();
+   if(daily_drawdown_block)
+   {
+      if(!g_daily_stop_tick_notice_sent)
+      {
+         StateLog("DRAWDOWN_SUSPEND", "Daily Drawdown Limit aktiv – Handel pausiert bis zum nächsten Tag");
+         g_daily_stop_tick_notice_sent = true;
+      }
+      return;
+   }
+   g_daily_stop_tick_notice_sent = false;
 
    UpdateBreakEvenAnchor();
 
@@ -4567,12 +4606,20 @@ void OnTick() {
                                                      SignalMode);
 
    string cooldown_reason = "";
-   if(original_final_signal != 0 && IsCooldownActive(cooldown_reason)) {
-      final_signal = 0;
-      trade_reason = cooldown_reason;
-      if(StringLen(missing_components) > 0)
-         missing_components += ", ";
-      missing_components += cooldown_reason;
+   if(original_final_signal != 0) {
+      bool cooldown_hit = false;
+      if(IsCooldownActive(cooldown_reason))
+         cooldown_hit = true;
+      else if(IsTradePauseActive(cooldown_reason))
+         cooldown_hit = true;
+
+      if(cooldown_hit) {
+         final_signal = 0;
+         trade_reason = cooldown_reason;
+         if(StringLen(missing_components) > 0)
+            missing_components += ", ";
+         missing_components += cooldown_reason;
+      }
    }
 
    // 4. Trade Status / Gründe (final)

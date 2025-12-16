@@ -1,30 +1,30 @@
-# 🟡 Sharrow-Fibel.md
-> Referenzdokument für das Sharrow-Revival – flache Struktur, volle Power
+# 🟡 Goldjunge-Fibel.md
+> Referenzdokument für das Goldjunge-Revival – flache Struktur, volle Power
 
 ---
 
 ## 🎯 Mission & Hintergrund
 - **Zielbild:** Vollautomatischer High-Winrate-Bot (95 %+) mit Volumen- und News-Gating – läuft autark auf dem VPS.
-- **Historie:** Sharrow v2025-07-11 lieferte 11:7 Trades mit ~95 % Winrate. Schwachstelle: fehlende Volumen-Metriken und sensible News-Filter.
-- **Reset-Strategie:** Wir bauen Sharrow als eigenständiges System neu auf. Dia bleibt als separates Experiment (besonders spannend für Krypto), liefert aber **keinen** Pflicht-Input.
+- **Historie:** Goldjunge v2025-07-11 lieferte 11:7 Trades mit ~95 % Winrate. Schwachstelle: fehlende Volumen-Metriken und sensible News-Filter.
+- **Reset-Strategie:** Wir bauen Goldjunge als eigenständiges System neu auf. Dia bleibt als separates Experiment (besonders spannend für Krypto), liefert aber **keinen** Pflicht-Input.
 
 ---
 
 ## 🧩 Systemkomponenten (flache Struktur)
-- `Sharrow/Train-KI-Bot.py` → Training & Feature-Engineering (Basis aus Sharrow-Bak, wird refactored).
-- `Sharrow/Sharrow.mq5` → MetaTrader-5-Expert-Advisor für Execution.
-- `Sharrow/GoldReport.mq5` → Dashboard/Overlay (optional, später reaktivieren).
-- `Sharrow/TKB-config.json` → Bot-Konfiguration (Modus, Risiko, Ziel, Telegram …).
-- `Sharrow/historical_*.csv` → Historische Daten mit Volumen (per `TKB-Data-Export.py`).
-- `Sharrow/news_*.json` oder `news_*.txt` → News-Snapshots (per `TKB-News-Bot.py`, ursprünglich `News-API-Bot.py`).
-- `Sharrow/rules_*.txt` → Regeldateien fürs MQ5-Interface.
-- `Sharrow/scripts/*.sh|.bat` → Autostart-Jobs (Data Refresh, Training, News Pull, Log Cleanup).
+- `Goldjunge/Train-KI-Bot.py` → Training & Feature-Engineering (Basis aus Goldjunge-Bak, wird refactored).
+- `Goldjunge/Goldjunge.mq5` → MetaTrader-5-Expert-Advisor für Execution.
+- `Goldjunge/GoldReport.mq5` → Dashboard/Overlay (optional, später reaktivieren).
+- `Goldjunge/TKB-config.json` → Bot-Konfiguration (Modus, Risiko, Ziel, Telegram …).
+- `Goldjunge/historical_*.csv` → Historische Daten mit Volumen (per `TKB-Data-Export.py`).
+- `Goldjunge/news_*.json` oder `news_*.txt` → News-Snapshots (per `TKB-News-Bot.py`, ursprünglich `News-API-Bot.py`).
+- `Goldjunge/rules_*.txt` → Regeldateien fürs MQ5-Interface.
+- `Goldjunge/scripts/*.sh|.bat` → Autostart-Jobs (Data Refresh, Training, News Pull, Log Cleanup).
 
-*Dia bleibt separat unter `/Trading/Dia/`; wer dessen Ergebnisse braucht, kann sie manuell spiegeln, aber Sharrow setzt nicht darauf auf.*
+*Dia bleibt separat unter `/Trading/Dia/`; wer dessen Ergebnisse braucht, kann sie manuell spiegeln, aber Goldjunge setzt nicht darauf auf.*
 
 ---
 
-## 🔄 Datenfluss Sharrow (Autark)
+## 🔄 Datenfluss Goldjunge (Autark)
 1. **Daten-Refresh:** `TKB-Data-Export.py` lädt Quotes + Volumen für alle Symbole (M1/M15/H1) aus den historischen Quellen / Brokerfeeds.
 2. **News-Polling:** `TKB-News-Bot.py` zieht Impact-analysierte News (Impact Score, Sentiment, Zeitstempel) und speichert sie flach im Projektordner.
 3. **Training:** `Train-KI-Bot.py`
@@ -33,7 +33,7 @@
    - baut Feature-Matrix inkl. Volumen-Scaling und News-Timelag
    - trainiert ML-Modelle (Vorversion nutzte sklearn/XGBoost; genaue Pipeline TBD)
    - schreibt `rules_SYMBOL.txt` + Event-Limits in den Projektordner
-4. **Execution:** `Sharrow.mq5`
+4. **Execution:** `Goldjunge.mq5`
    - lädt die Rules + News-Flags beim Chartstart
    - bewertet Live-Volumen vs. Schwellen
    - setzt Orders, verwaltet Stops, schreibt Logs, feuert Telegram Updates
@@ -60,15 +60,15 @@ TODO: konkrete Schwellen aus Backtests bestimmen (`TH_volume_spike`, `ImpactBloc
 
 ---
 
-## 🛠️ Arbeitsplan Sharrow Revival
-1. **Code-Import:** Beste Teile aus `Sharrow-Bak/` (Train-KI-Bot, News-Bot, MQ5) übernehmen.
+## 🛠️ Arbeitsplan Goldjunge Revival
+1. **Code-Import:** Beste Teile aus `Goldjunge-Bak/` (Train-KI-Bot, News-Bot, MQ5) übernehmen.
 2. **Refactor & Cleanup:**
    - Volumen-Feature-Engineering sauber einbauen
    - Config-Felder entschlacken
    - Logging + Exception Handling modernisieren
 3. **Automation:** Skripte so umbenennen, dass sie direkt im VPS Autostart funktionieren (`RUN-data-refresh.sh`, `RUN-train.sh`, `RUN-news.sh`, `RUN-mt5-log-clean.sh`).
 4. **Docs erweitern:**
-   - `Sharrow-Ersteinrichtung.md` (Quickstart jetzt, später detailliert)
+   - `Goldjunge-Ersteinrichtung.md` (Quickstart jetzt, später detailliert)
    - Performance Benchmarks / Backtest-Guide (Nachgelagert)
 5. **Testing & Deploy:**
    - Wine/Windows Testlauf
@@ -76,10 +76,10 @@ TODO: konkrete Schwellen aus Backtests bestimmen (`TH_volume_spike`, `ImpactBloc
 
 ---
 
-## 🧭 Entscheidungsprinzipien (Clean Girl Sharrow Edition)
+## 🧭 Entscheidungsprinzipien (Clean Girl Goldjunge Edition)
 - **Flat over Pretty:** Keine überflüssigen Unterordner, solange Skripte alles finden.
 - **Autostart-Ready:** Dateinamen so lassen, dass der VPS sofort loslegt.
-- **Backup Bewahren:** `Sharrow-Bak` bleibt unverändert als Referenz.
+- **Backup Bewahren:** `Goldjunge-Bak` bleibt unverändert als Referenz.
 - **Iterativ:** Doku → Skripte → Training → EA → QA.
 
 ---
@@ -92,6 +92,6 @@ TODO: konkrete Schwellen aus Backtests bestimmen (`TH_volume_spike`, `ImpactBloc
 
 ---
 
-**Next Action:** `Sharrow-Ersteinrichtung.md` als Quickstart-Skelett schreiben & Config-Mapping vorbereiten.
+**Next Action:** `Goldjunge-Ersteinrichtung.md` als Quickstart-Skelett schreiben & Config-Mapping vorbereiten.
 
-Auf geht's – Sharrow in Produktion bringen und sauber dokumentieren!
+Bussi auf Nussi & let’s make finance magic! ✧*:･ﾟ✧(◕‿◕)✧*:･ﾟ✧
