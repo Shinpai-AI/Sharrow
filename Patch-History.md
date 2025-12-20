@@ -70,3 +70,13 @@
 - Rules-Parser erkennt nun `class: -1` (und `class: 2`) als SELL und schreibt `node.signal = -1` statt 0 – dadurch bleiben die 21 SELL-Blätter aus `rules_*.txt` erhalten.
 - Fallback-BreakRevert-Logik gibt konsequent `-1` für SELL zurück, keine Phantom-"2"-Signale mehr.
 - `GetRulesSignal` mappt Tree-Resultate direkt (`1→BUY`, `-1→SELL`), sodass das finale 3-Regel-System wieder echte SELL-Signale bekommt (Signal-Mode C in Prod identisch aktualisiert).
+
+## 2025-12-17 — Trend-Strong Thresholds
+- `TKB-config.json` enthält jetzt einen eigenen Block `trend_strong` (Quantile + Faktoren für ADX/Vol/ATR) damit ML-Schwellen anpassbar bleiben.
+- `_compute_trend_strength_thresholds` liest die Config, clampte Quantile (0–1) und nutzt die Faktoren für Fallbacks & Quantile; fehlende Spalten werden sauber ignoriert.
+- `compute_intelligent_parameters` übergibt die Config an den Helper, wodurch `rules_*.txt` numerische Trend-Schwellen direkt aus den Einstellungen erhalten.
+
+## 2025-12-17 — TrendStrong Filter (EA)
+- `Goldjunge.mq5` liest nun `Trend_ADX_Strong`, `Trend_Volume_Strong`, `Trend_ATR_Strong` aus den Rules (Fallbacks auf Inputs) und loggt die Werte im Optimizer-Report.
+- Neuer Helper `IsTrendTooStrong` prüft ADX/Vol/ATR gegen diese Schwellen und setzt `g_trend_block_reason`, damit “Fehlt”-Logs und Debug exakt anzeigen, warum Trendbrand blockiert.
+- OnTick setzt nach der finalen Signalfindung (Rules/Logic/News) den Trendfilter ein: Überhitzung → `TREND_STRONG_BLOCK` + final_signal→0, ansonsten läuft die Pipeline unverändert weiter.

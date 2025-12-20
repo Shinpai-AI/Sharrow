@@ -5,10 +5,10 @@
     "version": "1.5"
   },
   "paths": {
-    "mt5_path": "C:/Program Files/MetaTrader 5",
+    "mt5_path": "/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5",
     "mt5_files_subpath": "MQL5/Files",
     "mt5_logs_subpath": "MQL5/Logs",
-    "python_bin": "python"
+    "python_bin": "/usr/bin/python3"
   },
   "news": {
     "provider": "manual",
@@ -100,6 +100,15 @@
     "stoch_sell_cap": 90.0,
     "volume_floor": 400.0,
     "volume_cap": 15000.0
+  },
+  "trend_strong": {
+    "adx_quantile": 0.75,
+    "adx_factor": 1.8,
+    "volume_quantile": 0.75,
+    "volume_factor": 2.0,
+    "atr_quantile": 0.75,
+    "atr_factor": 1.5,
+    "atr_default": 0.0008
   },
   "rules": {
     "min_winrate": 0.45,

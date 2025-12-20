@@ -236,6 +236,9 @@ struct OptimizedParameters {
    double volume_min;        // Optimierte Volume-Schwelle
    double breakout_threshold;      // Dynamische Breakout-Schwelle
    double mean_reversion_threshold;// Dynamische Mean-Reversion-Schwelle
+   double trend_adx_strong;        // Trend-Filter: ADX-Schwelle
+   double trend_volume_strong;     // Trend-Filter: Volumen-Schwelle
+   double trend_atr_strong;        // Trend-Filter: ATR-Schwelle
    bool parameters_loaded;   // Flag ob Parameter aus Rules geladen wurden
 };
 
@@ -278,6 +281,9 @@ int    g_casino_direction = 0;
 double g_casino_ratio = 0.0;
 double g_casino_median = 0.0;
 string g_casino_last_reason = "";
+
+bool   g_trend_block_active = false;
+string g_trend_block_reason = "";
 
 struct CasinoDynamicStats {
    bool initialized;
@@ -2355,6 +2361,9 @@ bool LoadOptimizedParameters() {
    g_optimized_params.volume_min = Quality_Volume_Min;
    g_optimized_params.breakout_threshold = Breakout_Threshold;
    g_optimized_params.mean_reversion_threshold = Mean_Reversion_Threshold;
+   g_optimized_params.trend_adx_strong = ADX_Strong_Min;
+   g_optimized_params.trend_volume_strong = Quality_Volume_Min * 2.0;
+   g_optimized_params.trend_atr_strong = 0.0;
    g_optimized_params.parameters_loaded = false;
    
    string file_name = "rules_" + _Symbol + ".txt";
@@ -2425,6 +2434,30 @@ bool LoadOptimizedParameters() {
          found_optimized = true;
          Print("📊 [OPTIMIZATION] Mean_Reversion_Threshold: ", g_optimized_params.mean_reversion_threshold);
       }
+      else if(StringFind(line, "Trend_ADX_Strong:") == 0) {
+         string value_str = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(value_str);
+         StringTrimRight(value_str);
+         g_optimized_params.trend_adx_strong = StringToDouble(value_str);
+         found_optimized = true;
+         Print("📊 [OPTIMIZATION] Trend_ADX_Strong: ", g_optimized_params.trend_adx_strong);
+      }
+      else if(StringFind(line, "Trend_Volume_Strong:") == 0) {
+         string value_str = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(value_str);
+         StringTrimRight(value_str);
+         g_optimized_params.trend_volume_strong = StringToDouble(value_str);
+         found_optimized = true;
+         Print("📊 [OPTIMIZATION] Trend_Volume_Strong: ", g_optimized_params.trend_volume_strong);
+      }
+      else if(StringFind(line, "Trend_ATR_Strong:") == 0) {
+         string value_str = StringSubstr(line, StringFind(line, ":") + 1);
+         StringTrimLeft(value_str);
+         StringTrimRight(value_str);
+         g_optimized_params.trend_atr_strong = StringToDouble(value_str);
+         found_optimized = true;
+         Print("📊 [OPTIMIZATION] Trend_ATR_Strong: ", g_optimized_params.trend_atr_strong);
+      }
    }
    
    FileClose(file_handle);
@@ -2436,6 +2469,9 @@ bool LoadOptimizedParameters() {
       Print("   ├── Stoch_Buy_Max: ", g_optimized_params.stoch_buy_max, " (input: ", Quality_Stoch_Buy_Max, ")");
       Print("   ├── Stoch_Sell_Min: ", g_optimized_params.stoch_sell_min, " (input: ", Quality_Stoch_Sell_Min, ")");
       Print("   ├── Volume_Min: ", g_optimized_params.volume_min, " (input: ", Quality_Volume_Min, ")");
+      Print("   ├── TrendStrong: ADX>=", DoubleToString(g_optimized_params.trend_adx_strong, 1),
+            ", Vol>=", DoubleToString(g_optimized_params.trend_volume_strong, 0),
+            ", ATR>=", DoubleToString(g_optimized_params.trend_atr_strong, _Digits > 3 ? 5 : 4));
       Print("   └── BreakRevert Thresholds: Breakout>", DoubleToString(g_optimized_params.breakout_threshold, 3),
             ", Mean<", DoubleToString(g_optimized_params.mean_reversion_threshold, 3), ")");
    } else {
@@ -3478,6 +3514,28 @@ bool CheckQualityFiltersForDirection(int direction,
    return StringLen(reason) == 0;
 }
 
+bool IsTrendTooStrong(double adx_current,
+                      double volume_current,
+                      double atr_current,
+                      double adx_strong_threshold,
+                      double volume_strong_threshold,
+                      double atr_strong_threshold,
+                      string &reason)
+{
+   reason = "";
+
+   if(adx_strong_threshold > 0.0 && adx_current >= adx_strong_threshold)
+      AppendReason(reason, "ADX " + DoubleToString(adx_current, 1) + ">=" + DoubleToString(adx_strong_threshold, 1));
+
+   if(volume_strong_threshold > 0.0 && volume_current >= volume_strong_threshold)
+      AppendReason(reason, "Vol " + DoubleToString(volume_current, 0) + ">=" + DoubleToString(volume_strong_threshold, 0));
+
+   if(atr_strong_threshold > 0.0 && atr_current >= atr_strong_threshold)
+      AppendReason(reason, "ATR " + DoubleToString(atr_current, _Digits > 3 ? 5 : 4) + ">=" + DoubleToString(atr_strong_threshold, _Digits > 3 ? 5 : 4));
+
+   return StringLen(reason) > 0;
+}
+
 // News-Signal kompakt formatieren
 string FormatNewsSignalLine(int news_signal) {
    string direction = news_signal == 1 ? "BUY" : news_signal == -1 ? "SELL" : "NEUTRAL";
@@ -3604,6 +3662,10 @@ string BuildMissingConditions(int final_signal,
       if(volume_current < volume_min) {
          AppendReason(reasons, "Vol<" + DoubleToString(volume_min, 0));
       }
+   }
+
+   if(g_trend_block_active && StringLen(g_trend_block_reason) > 0) {
+      AppendReason(reasons, g_trend_block_reason);
    }
 
    return reasons;
@@ -4245,6 +4307,8 @@ void OnTick() {
       return;
    }
    g_daily_stop_tick_notice_sent = false;
+   g_trend_block_active = false;
+   g_trend_block_reason = "";
 
    UpdateBreakEvenAnchor();
 
@@ -4288,8 +4352,9 @@ void OnTick() {
    double adx_current   = adx[1];
    double stoch_current = stochastic_k[1];
    double volume_current = (double)volume[1];
+   double atr_current = atr[1];
 
-   g_last_atr_value = atr[1];
+   g_last_atr_value = atr_current;
    HandleTrailingStop(night_stop_now);
 
    if(night_stop_now)
@@ -4435,6 +4500,43 @@ void OnTick() {
       if(EnableDebug)
          DebugLog("DRAWDOWN STOP aktiv – final_signal auf 0 gesetzt");
       final_signal = 0;
+   }
+
+   if(final_signal != 0)
+   {
+      double trend_adx_threshold = g_optimized_params.trend_adx_strong;
+      if(trend_adx_threshold <= 0.0)
+         trend_adx_threshold = MathMax(ADX_Strong_Min, threshold_adx + 5.0);
+
+      double trend_volume_threshold = g_optimized_params.trend_volume_strong;
+      if(trend_volume_threshold <= 0.0)
+         trend_volume_threshold = MathMax(threshold_volume * 2.0, threshold_volume + 1000.0);
+
+      double trend_atr_threshold = g_optimized_params.trend_atr_strong;
+      if(trend_atr_threshold <= 0.0)
+      {
+         double point = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+         double atr_base = atr_current > 0.0 ? atr_current : point * 20.0;
+         double atr_floor = point > 0.0 ? point * 10.0 : 0.0005;
+         trend_atr_threshold = MathMax(MathMax(atr_base * 1.5, atr_base + atr_floor), atr_floor);
+      }
+
+      string trend_reason_details = "";
+      if(IsTrendTooStrong(adx_current,
+                          volume_current,
+                          atr_current,
+                          trend_adx_threshold,
+                          trend_volume_threshold,
+                          trend_atr_threshold,
+                          trend_reason_details))
+      {
+         g_trend_block_active = true;
+         g_trend_block_reason = "TrendStrong: " + trend_reason_details;
+         StateLog("TREND_STRONG_BLOCK", g_trend_block_reason);
+         if(EnableDebug)
+            DebugLog("Trend-Filter blockiert Trade (" + g_trend_block_reason + ")");
+         final_signal = 0;
+      }
    }
    
    // ===== TP/SL BERECHNUNG =====

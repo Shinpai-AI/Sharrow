@@ -101,6 +101,15 @@
     "volume_floor": 400.0,
     "volume_cap": 15000.0
   },
+  "trend_strong": {
+    "adx_quantile": 0.75,
+    "adx_factor": 1.8,
+    "volume_quantile": 0.75,
+    "volume_factor": 2.0,
+    "atr_quantile": 0.75,
+    "atr_factor": 1.5,
+    "atr_default": 0.0008
+  },
   "rules": {
     "min_winrate": 0.45,
     "min_trades": 40,
