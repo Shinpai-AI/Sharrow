@@ -1,4 +1,4 @@
-# 🏹 Sharrow Trading System v2 BETA
+# 🏹 Sharrow Trading System v2.20
 
 <p align="center">
   <img src="sharrow-logo.png" alt="Sharrow Logo" width="200" />
@@ -163,10 +163,10 @@ RUN-train.bat
 
 | Job                  | Ziel                                    | Intervall        |
 |----------------------|-----------------------------------------|------------------|
-| `RUN-data-refresh`   | Historische CSVs ersetzen, *_extend kopieren | Monatlich (oder manuell) |
+| `RUN-data-refresh`   | Historische CSVs ersetzen, *_extend kopieren | nach Bedarf |
 | `RUN-news`           | News-Feeds aktualisieren                | Stündlich        |
 | `RUN-train`          | Regeln & Modelle neu trainieren         | Wöchentlich      |
-| `RUN-MT5-Log-Cleaner`| MT5-Logs bereinigen                     | Nach Bedarf      |
+| `RUN-MT5-Log-Cleaner`| MT5-Logs bereinigen                     | Wöchentlich      |
 
 Automatisierung über cron (Linux) oder Task Scheduler (Windows) wird empfohlen.
 
