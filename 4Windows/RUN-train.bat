@@ -18,18 +18,12 @@ set "SYMBOL_EXPORT_FILE=SymbolDataExport.csv"
 call :config_path paths.mt5_path MT5_PATH
 if not defined MT5_PATH set "MT5_PATH=C:\\Users\\Hanne\\AppData\\Roaming\\MetaQuotes\\Terminal\\D0E8209F77C8CF37AD8BF550E51FF075"
 call :config_path paths.mt5_files_subpath FILES_SUBPATH
-if not defined FILES_SUBPATH set "FILES_SUBPATH=MQL5/Files"
-set "MQL5_FILES=%MT5_PATH%\%FILES_SUBPATH%"
-set "MQL5_FILES=%MQL5_FILES:/=\%"
-call :config_path paths.mt5_logs_subpath LOGS_SUBPATH
-if not defined LOGS_SUBPATH set "LOGS_SUBPATH=MQL5/Logs"
-set "MQL5_LOGS=%MT5_PATH%\%LOGS_SUBPATH%"
-set "MQL5_LOGS=%MQL5_LOGS:/=\%"
+set "RESOLVE_SUB=%FILES_SUBPATH%"
+call :resolve_mt5_child "MQL5/Files" MQL5_FILES
 call :config_path paths.python_bin PYTHON_BIN
 if not defined PYTHON_BIN set "PYTHON_BIN=python"
-set "SYMBOL_MOVED=false"
 
->"%LOG_FILE%" (echo [%date% %time%] === SHARROW TRAIN WORKFLOW START ===)
+call :log "=== GOLDJUNGE TRAIN WORKFLOW START ==="
 call :log "Arbeitsverzeichnis: %SCRIPT_DIR%"
 call :log "MT5 Pfad: %MT5_PATH%"
 call :log "MT5 Files: %MQL5_FILES%"
@@ -39,33 +33,51 @@ call :clean_temp_files
 call :copy_symbol_export
 call :copy_all_csv
 call :run_config_processing
-call :run_data_export
-call :run_training
+call :run_data_export || goto :fail
+call :run_training || goto :fail
 call :copy_rules
 call :cleanup_mt5_csv
 call :summary
+goto :end
 
-echo SHARROW TRAIN WORKFLOW abgeschlossen! Schau in: %LOG_FILE%
-pause
+:fail
+call :log "❌ TRAIN WORKFLOW abgebrochen"
+exit /b 1
+
+:end
 exit /b 0
 
 :clean_temp_files
 set "DELETE_COUNT=0"
 call :log "Starte Aufräumphase"
 for %%F in ("%SCRIPT_DIR%\*") do (
-    set "ITEM=%%~fF"
-    set "BASE=%%~nxF"
     if exist "%%~fF\" (
-        if /i "!BASE!"=="venv" (call :log "PROTECTED (Dir): !BASE!" & continue)
-        if /i "!BASE!"=="__pycache__" (call :log "PROTECTED (Dir): !BASE!" & continue)
+        call :log "PROTECTED (Dir): %%~nxF"
     ) else (
-        echo !BASE! | findstr /r /c:"\.py$" /c:"\.mq5$" /c:"^RUN" /c:"config\.json" /c:"\.md$" /c:"_H1\.csv$" /c:"_M1\.csv$" /c:"_M15\.csv$" >nul
-        if !errorlevel! equ 0 (call :log "PROTECTED: !BASE!" & continue)
+        set "BASE=%%~nxF"
+        call :is_protected_file "%%~nxF"
+        if "!PROTECT_FLAG!"=="1" (
+            call :log "PROTECTED: %%~nxF"
+        ) else (
+            del "%%~fF" >nul 2>&1
+            if not errorlevel 1 set /a DELETE_COUNT+=1
+        )
     )
-    del "%%~fF" >nul 2>&1
-    if not errorlevel 1 set /a DELETE_COUNT+=1
 )
 call :log "Gelöschte Dateien: !DELETE_COUNT!"
+exit /b 0
+
+:is_protected_file
+set "CHECK_NAME=%~1"
+set "PROTECT_FLAG=0"
+if /I "!CHECK_NAME:~-3!"==".py" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-4!"==".mq5" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-3!"==".md" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~0,3!"=="RUN" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-11!"=="config.json" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-7!"=="_H1.csv" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-7!"=="_M1.csv" set "PROTECT_FLAG=1"
+if /I "!CHECK_NAME:~-8!"=="_M15.csv" set "PROTECT_FLAG=1"
 exit /b 0
 
 :copy_symbol_export
@@ -74,13 +86,9 @@ if exist "%MQL5_FILES%\%SYMBOL_EXPORT_FILE%" (
     move "%MQL5_FILES%\%SYMBOL_EXPORT_FILE%" "%SCRIPT_DIR%\" >nul 2>&1
     if errorlevel 1 (
         call :log "❌ Verschieben fehlgeschlagen"
-        set "SYMBOL_MOVED=false"
-    ) else (
-        set "SYMBOL_MOVED=true"
     )
 ) else (
     call :log "Keine SymbolDataExport.csv im MT5 Files"
-    set "SYMBOL_MOVED=false"
 )
 exit /b 0
 
@@ -88,10 +96,12 @@ exit /b 0
 set "CSV_COPY_COUNT=0"
 if exist "%MQL5_FILES%\" (
     call :log "Kopiere CSV-Dateien aus MT5"
-    for %%F in ("%MQL5_FILES%\*.csv") do (
-        copy "%%~fF" "%DATA_DIR%\" >nul 2>&1
+    for /f "usebackq delims=" %%F in (`dir /b /a:-d "%MQL5_FILES%\*.csv" 2^>nul`) do (
+        set "SRC=%MQL5_FILES%\%%F"
+        set "DEST=%DATA_DIR%\%%F"
+        copy /Y "!SRC!" "!DEST!" >nul 2>&1
         if errorlevel 1 (
-            call :log "❌ Fehler beim Kopieren: %%~nxF"
+            call :log "❌ Fehler beim Kopieren: %%F"
         ) else (
             set /a CSV_COPY_COUNT+=1
         )
@@ -103,9 +113,10 @@ if exist "%MQL5_FILES%\" (
 exit /b 0
 
 :run_config_processing
-if "%SYMBOL_MOVED%"=="true" if exist "%CONFIG_SCRIPT%" (
+set "EXPORT_PATH=%SCRIPT_DIR%\%SYMBOL_EXPORT_FILE%"
+if exist "%CONFIG_SCRIPT%" if exist "%EXPORT_PATH%" (
     call :log "Aktualisiere TKB-config mit Symboldaten"
-    "%PYTHON_BIN%" "%CONFIG_SCRIPT%" >> "%LOG_FILE%" 2>&1
+    "%PYTHON_BIN%" "%CONFIG_SCRIPT%" --import-symbols "%EXPORT_PATH%" >> "%LOG_FILE%" 2>&1
     if errorlevel 1 call :log "❌ Config-Processing fehlgeschlagen"
 ) else (
     call :log "Config-Processing übersprungen"
@@ -113,25 +124,24 @@ if "%SYMBOL_MOVED%"=="true" if exist "%CONFIG_SCRIPT%" (
 exit /b 0
 
 :run_data_export
-if exist "%DATA_EXPORT_SCRIPT%" (
-    call :log "Starte Datenexport"
-    if exist "%WELLDONE_DATA_FILE%" del "%WELLDONE_DATA_FILE%" >nul 2>&1
-    "%PYTHON_BIN%" "%DATA_EXPORT_SCRIPT%" --config "%CONFIG_FILE%" --dest "%DATA_DIR%" >> "%LOG_FILE%" 2>&1
-    if errorlevel 1 (
-        call :log "❌ Datenexport fehlgeschlagen"
-        exit /b 1
-    )
-    call :log "Datenexport abgeschlossen"
-) else (
+if not exist "%DATA_EXPORT_SCRIPT%" (
     call :log "❌ TKB-Data-Export.py nicht gefunden"
     exit /b 1
 )
+call :log "Starte Datenexport"
+if exist "%WELLDONE_DATA_FILE%" del "%WELLDONE_DATA_FILE%" >nul 2>&1
+"%PYTHON_BIN%" "%DATA_EXPORT_SCRIPT%" --config "%CONFIG_FILE%" --dest "%DATA_DIR%" >> "%LOG_FILE%" 2>&1
+if errorlevel 1 (
+    call :log "❌ Datenexport fehlgeschlagen"
+    exit /b 1
+)
+call :log "Datenexport abgeschlossen"
 exit /b 0
 
 :run_training
 if not exist "%TRAIN_SCRIPT%" (
     call :log "⚠️ Train-KI-Bot.py fehlt – Training übersprungen"
-    goto :eof
+    exit /b 0
 )
 call :log "Starte Training"
 "%PYTHON_BIN%" "%TRAIN_SCRIPT%" >> "%LOG_FILE%" 2>&1
@@ -159,14 +169,14 @@ exit /b 0
 set "RULES_COUNT=0"
 if exist "%MQL5_FILES%\" (
     call :log "Kopiere rules_*.txt nach MT5"
-    for %%F in ("%RULES_DIR%\rules_*.txt") do (
-        if exist "%%~fF" (
-            copy "%%~fF" "%MQL5_FILES%\" >nul 2>&1
-            if errorlevel 1 (
-                call :log "❌ Fehler beim Kopieren: %%~nxF"
-            ) else (
-                set /a RULES_COUNT+=1
-            )
+    for /f "usebackq delims=" %%F in (`dir /b /a:-d "%RULES_DIR%\rules_*.txt" 2^>nul`) do (
+        set "SRC=%RULES_DIR%\%%F"
+        set "DEST=%MQL5_FILES%\%%F"
+        copy /Y "!SRC!" "!DEST!" >nul 2>&1
+        if errorlevel 1 (
+            call :log "❌ Fehler beim Kopieren: %%F"
+        ) else (
+            set /a RULES_COUNT+=1
         )
     )
     call :log "Regeln kopiert: !RULES_COUNT!"
@@ -179,8 +189,8 @@ exit /b 0
 if /I "%DELETE_MQL5_CSVS%"=="true" if exist "%MQL5_FILES%\" (
     set "CSV_DELETE_COUNT=0"
     call :log "Lösche CSV-Dateien in MT5 Files"
-    for %%F in ("%MQL5_FILES%\*.csv") do (
-        del "%%~fF" >nul 2>&1
+    for /f "usebackq delims=" %%F in (`dir /b /a:-d "%MQL5_FILES%\*.csv" 2^>nul`) do (
+        del "%MQL5_FILES%\%%F" >nul 2>&1
         if not errorlevel 1 set /a CSV_DELETE_COUNT+=1
     )
     call :log "CSV in MT5 gelöscht: !CSV_DELETE_COUNT!"
@@ -194,6 +204,15 @@ call :log "=== Training Workflow abgeschlossen ==="
 call :log "MT5 Pfad: %MT5_PATH%"
 call :log "MT5 Files: %MQL5_FILES%"
 call :log "Python: %PYTHON_BIN%"
+exit /b 0
+
+:resolve_mt5_child
+set "RESOLVE_DEFAULT=%~1"
+set "TARGET_VAR=%~2"
+if not defined RESOLVE_SUB set "RESOLVE_SUB="
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$script = $env:SCRIPT_DIR; $sub = $env:RESOLVE_SUB; if (-not $sub) { $sub = $env:RESOLVE_DEFAULT }; $sub = $sub -replace '/', '\'; if ($script -and $sub -and $sub.StartsWith($script, [System.StringComparison]::OrdinalIgnoreCase)) { $sub = $sub.Substring($script.Length).TrimStart('\','/') }; if ($sub -and [System.IO.Path]::IsPathRooted($sub)) { $result = $sub } elseif ($env:MT5_PATH) { $result = [System.IO.Path]::Combine($env:MT5_PATH, $sub) } else { $result = $sub }; Write-Output $result"`) do set "%TARGET_VAR%=%%I"
+set "RESOLVE_SUB="
+set "RESOLVE_DEFAULT="
 exit /b 0
 
 :log
@@ -225,4 +244,5 @@ for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "\
     Write-Output $value\
   }"`) do set "RESULT=%%i"
 set "%~2=%RESULT%"
+set "RESULT="
 exit /b 0

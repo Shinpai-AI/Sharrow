@@ -11,9 +11,8 @@ set "SIGNAL_FILE=%NEWS_DIR%\welldone-News.txt"
 call :config_path paths.mt5_path MT5_PATH
 if not defined MT5_PATH set "MT5_PATH=C:\\Users\\Hanne\\AppData\\Roaming\\MetaQuotes\\Terminal\\D0E8209F77C8CF37AD8BF550E51FF075"
 call :config_path paths.mt5_files_subpath FILES_SUBPATH
-if not defined FILES_SUBPATH set "FILES_SUBPATH=MQL5/Files"
-set "MQL5_FILES=%MT5_PATH%\%FILES_SUBPATH%"
-set "MQL5_FILES=%MQL5_FILES:/=\%"
+set "RESOLVE_SUB=%FILES_SUBPATH%"
+call :resolve_mt5_child "MQL5/Files" MQL5_FILES
 call :config_path paths.python_bin PYTHON_BIN
 if not defined PYTHON_BIN set "PYTHON_BIN=python"
 set "NEWS_SCRIPT_PATH=%SCRIPT_DIR%\TKB-News-Bot.py"
@@ -92,10 +91,19 @@ if !FILES_COPIED! GTR 0 if !FILES_FAILED! EQU 0 (
 
 goto :eof
 
+:resolve_mt5_child
+set "RESOLVE_DEFAULT=%~1"
+set "TARGET_VAR=%~2"
+if not defined RESOLVE_SUB set "RESOLVE_SUB="
+for /f "usebackq delims=" %%I in (`powershell -NoProfile -Command "$script = $env:SCRIPT_DIR; $sub = $env:RESOLVE_SUB; if (-not $sub) { $sub = $env:RESOLVE_DEFAULT }; $sub = $sub -replace '/', '\'; if ($script -and $sub -and $sub.StartsWith($script, [System.StringComparison]::OrdinalIgnoreCase)) { $sub = $sub.Substring($script.Length).TrimStart('\','/') }; if ($sub -and [System.IO.Path]::IsPathRooted($sub)) { $result = $sub } elseif ($env:MT5_PATH) { $result = [System.IO.Path]::Combine($env:MT5_PATH, $sub) } else { $result = $sub }; Write-Output $result"`) do set "%TARGET_VAR%=%%I"
+set "RESOLVE_SUB="
+set "RESOLVE_DEFAULT="
+exit /b 0
+
 :log
 for /f "usebackq delims=" %%t in (`powershell -NoProfile -Command "Get-Date -Format 'yyyy-MM-dd HH:mm:ss'"`) do set "TS=%%t"
-echo [%TS%] %~1
->>"%LOG_FILE%" echo [%TS%] %~1
+echo [!TS!] %~1
+>>"%LOG_FILE%" echo [!TS!] %~1
 exit /b 0
 
 :config_path
@@ -121,4 +129,5 @@ for /f "usebackq delims=" %%i in (`powershell -NoProfile -Command "\
     Write-Output $value\
   }"`) do set "RESULT=%%i"
 set "%~2=%RESULT%"
+set "RESULT="
 exit /b 0
