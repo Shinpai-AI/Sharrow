@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# SHARROW HISTORICAL DATA REFRESH SCRIPT
+# GOLDJUNGE HISTORICAL DATA REFRESH SCRIPT
 # =============================================================================
 # Automatisches monatliches Löschen und Neuerstellen aller CSV-Dateien
 # Für Crontab: 0 6 1 * * /path/to/RUN-data-refresh.sh
@@ -62,7 +62,7 @@ log_message() {
 }
 
 main() {
-    log_message "=== SHARROW MONTHLY DATA REFRESH STARTED ==="
+    log_message "=== GOLDJUNGE MONTHLY DATA REFRESH STARTED ==="
     log_message "Arbeitsverzeichnis: $SCRIPT_DIR"
     log_message "MT5 Pfad: $MT5_PATH"
     log_message "MT5 Files: $MT5_FILES"
@@ -146,7 +146,7 @@ main() {
         log_message "Datenbereich konnte nicht bestimmt werden"
     fi
 
-    log_message "=== SHARROW DATA REFRESH COMPLETE ==="
+    log_message "=== GOLDJUNGE DATA REFRESH COMPLETE ==="
 }
 
 main "$@"

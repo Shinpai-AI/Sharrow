@@ -541,7 +541,7 @@ def create_completion_signal(symbol_count):
 
 def run_news_update(config, symbol_api_mapping):
     """Führt eine komplette News-Update-Runde durch basierend auf Config"""
-    print(f"\n🚀 [{datetime.now().strftime('%H:%M:%S')}] SHARROW HOURLY NEWS UPDATE")
+    print(f"\n🚀 [{datetime.now().strftime('%H:%M:%S')}] GOLDJUNGE HOURLY NEWS UPDATE")
     print("=" * 60)
     
     successful = 0
@@ -581,7 +581,7 @@ def run_news_update(config, symbol_api_mapping):
 
 def main():
     """Hauptfunktion: Stündliche Symbol-spezifische News Updates basierend auf Config"""
-    print("🚀 SHARROW CONFIG-BASED NEWS BOT v3.0 - HOURLY MODE")
+    print("🚀 GOLDJUNGE CONFIG-BASED NEWS BOT v3.0 - HOURLY MODE")
     print("=" * 60)
     
     # Config laden

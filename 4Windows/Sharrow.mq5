@@ -1,11 +1,11 @@
-// Sharrow.mq5 – Multi-Asset Trend Engine (H1 Trading + Multi-TF Export + Smart News v6.0)
-// Copyright: Hannes Kell / Shinpai-AI
+// Sharrow.mq5 – Multi-Asset Trend Engine (H1 Trading + Multi-TF Export + Smart News v2.2)
+// Copyright: Shinpai-AI
 // Link: https://github.com/Shinpai-AI/Projekt-SAI
 // Version: 6.0 (Showcase Cleanup + Smart Asset Detection)
 
-#property copyright "Hannes Kell / Shinpai-AI"
+#property copyright "Shinpai-AI"
 #property link      "https://github.com/Shinpai-AI/Projekt-SAI"
-#property version   "6.00"
+#property version   "2.20"
 
 // Abhängigkeiten
 #include <Trade\Trade.mqh>
@@ -129,7 +129,7 @@ enum ENUM_NEWS_CHECK_INTERVAL {
    NEWS_INTERVAL_75 = 75, NEWS_INTERVAL_90 = 90, NEWS_INTERVAL_105 = 105, NEWS_INTERVAL_120 = 120
 };
 
-// ===== SHARROW INPUT-PARAMETER (v6.0 Showcase) =====
+// ===== SHARROW INPUT-PARAMETER (v2.2 Showcase) =====
 
 input group "=== HISTORIE & EXPORT BASIS ==="
 input string HistoryStartDate = "2023.01.01";         // Startdatum für Historie
@@ -236,9 +236,9 @@ struct OptimizedParameters {
    double volume_min;        // Optimierte Volume-Schwelle
    double breakout_threshold;      // Dynamische Breakout-Schwelle
    double mean_reversion_threshold;// Dynamische Mean-Reversion-Schwelle
-   double trend_adx_strong;        // Trend-Filter: ADX-Schwelle
-   double trend_volume_strong;     // Trend-Filter: Volumen-Schwelle
-   double trend_atr_strong;        // Trend-Filter: ATR-Schwelle
+   double trend_adx_strong;        // Schwelle für "starker Trend" (ADX)
+   double trend_volume_strong;     // Schwelle für "starker Trend" (Volumen)
+   double trend_atr_strong;        // Schwelle für "starker Trend" (ATR)
    bool parameters_loaded;   // Flag ob Parameter aus Rules geladen wurden
 };
 
@@ -1630,17 +1630,17 @@ bool news_closing_enabled = true; // News-Closing aktivieren/deaktivieren
 
 // === SHARROW DECISION TREE ENGINE ===
 // RuleNode für 4-Stage Pipeline (stochastic, adx, atr, weibull_prob, poisson_prob, volume)
-struct GoldRuleNode {
+struct SharrowRuleNode {
    string feature;        // "stochastic", "adx", "atr", "weibull_prob", "poisson_prob", "volume"
    double threshold;      // Vergleichswert (normalisiert für ML-Features)
    bool is_less_equal;    // true für <=, false für >
-   int signal;            // 0=Hold, 1=Buy, 2=Sell (wie in Sharrow Train-KI-Bot.py)
+   int signal;            // -1=Sell, 0=Hold, 1=Buy (Train-KI-Bot liefert -1/0/1)
    bool is_leaf;          // true für Endknoten mit Signal
    int parent_index;      // Index des Elternknotens
    int left_child;        // Index des linken Kindes  
    int right_child;       // Index des rechten Kindes
 };
-GoldRuleNode decision_tree[];
+SharrowRuleNode decision_tree[];
 int tree_node_count = 0;
 int rule_count = 0;
 CArrayDouble m_close_prices_m1, m_close_prices_m15, m_close_prices_h1;
@@ -1953,12 +1953,12 @@ void InitializeSymbolParameters() {
             ", news_file=" + g_news_file);
 }
 
-// ECHTE MT5-Margin-Berechnung wie in GoldReport.mq5
+// ECHTE MT5-Margin-Berechnung wie in SharrowReport.mq5
 double CalculateUniversalMarginPerLot() {
    double margin_per_lot = 0.0;
    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
    
-   // ROBUSTE MT5-MARGIN-BERECHNUNG mit Retry-Logic (wie GoldReport)
+   // ROBUSTE MT5-MARGIN-BERECHNUNG mit Retry-Logic (wie SharrowReport)
    const int MAX_RETRIES = 3;
    const int RETRY_DELAY_MS = 100;
    bool success = false;
@@ -2567,7 +2567,7 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
       }
       
       // === SHARROW DECISION TREE PARSER ===
-      // Parse Decision Tree Rules (adaptiert von LegacyBotV5)
+      // Parse Decision Tree Rules (adaptiert von Ray-KI-BotV5)
       if(StringFind(line, "|---") >= 0) {
          int content_start = 0;
          int indent = GetDecisionTreeIndent(line, content_start);
@@ -2576,7 +2576,7 @@ void LoadRules(ENUM_TIMEFRAMES tf) {
          StringTrimRight(content);
          if(StringLen(content) == 0) continue;
 
-         GoldRuleNode node;
+         SharrowRuleNode node;
          node.signal = 0;
          node.left_child = -1;
          node.right_child = -1;
@@ -3040,7 +3040,7 @@ void UpdateBreakEvenAnchor()
 int EvaluateDecisionTree(double stochastic, double adx, double atr, double weibull_prob, double poisson_prob, double volume) {
    // Use recursive tree traversal if tree is loaded
    if(tree_node_count > 0) {
-      int tree_signal = EvaluateGoldTreeRecursive(stochastic, adx, atr, weibull_prob, poisson_prob, volume, 0);
+      int tree_signal = EvaluateSharrowTreeRecursive(stochastic, adx, atr, weibull_prob, poisson_prob, volume, 0);
       DebugLog("EvaluateDecisionTree: Tree Signal=" + IntegerToString(tree_signal) + " (TreeNodes=" + IntegerToString(tree_node_count) + ")");
       return tree_signal;
    }
@@ -3080,19 +3080,19 @@ int EvaluateDecisionTree(double stochastic, double adx, double atr, double weibu
 }
 
 // ===== RECURSIVE TREE TRAVERSAL ENGINE =====
-// Core recursive function (adaptiert von LegacyBotV5 für Sharrow Features)
-int EvaluateGoldTreeRecursive(double stochastic, double adx, double atr, double weibull_prob, double poisson_prob, double volume, int node_index = 0) {
+// Core recursive function (adaptiert von Ray-KI-BotV5 für Sharrow Features)
+int EvaluateSharrowTreeRecursive(double stochastic, double adx, double atr, double weibull_prob, double poisson_prob, double volume, int node_index = 0) {
    // Validation
    if(node_index >= tree_node_count || node_index < 0) {
-      DebugLog("EvaluateGoldTree: Invalid node index " + IntegerToString(node_index));
+      DebugLog("EvaluateSharrowTree: Invalid node index " + IntegerToString(node_index));
       return 0;
    }
    
-   GoldRuleNode node = decision_tree[node_index];
+   SharrowRuleNode node = decision_tree[node_index];
    
    // Leaf node - return signal
    if(node.is_leaf) {
-      DebugLog("EvaluateGoldTree: Leaf reached - Signal=" + IntegerToString(node.signal));
+      DebugLog("EvaluateSharrowTree: Leaf reached - Signal=" + IntegerToString(node.signal));
       return node.signal;
    }
    
@@ -3106,23 +3106,23 @@ int EvaluateGoldTreeRecursive(double stochastic, double adx, double atr, double 
    else if(node.feature == "volume") feature_value = volume;
    else if(node.feature == "Volume") feature_value = volume;  // Case-sensitivity fix
    else {
-      DebugLog("EvaluateGoldTree: Unknown feature " + node.feature);
+      DebugLog("EvaluateSharrowTree: Unknown feature " + node.feature);
       return 0;
    }
    
    // Condition evaluation
    bool condition_met = node.is_less_equal ? (feature_value <= node.threshold) : (feature_value > node.threshold);
    
-   DebugLog("EvaluateGoldTree: " + node.feature + (node.is_less_equal ? " <= " : " > ") + 
+   DebugLog("EvaluateSharrowTree: " + node.feature + (node.is_less_equal ? " <= " : " > ") + 
            DoubleToString(node.threshold, 6) + " (" + DoubleToString(feature_value, 6) + ") = " + 
            (condition_met ? "True" : "False"));
    
    int next_node = condition_met ? node.left_child : node.right_child;
    if(next_node >= 0 && next_node < tree_node_count) {
-      return EvaluateGoldTreeRecursive(stochastic, adx, atr, weibull_prob, poisson_prob, volume, next_node);
+      return EvaluateSharrowTreeRecursive(stochastic, adx, atr, weibull_prob, poisson_prob, volume, next_node);
    }
 
-   DebugLog("EvaluateGoldTree: Keine Kinder für Knoten " + IntegerToString(node_index) + 
+   DebugLog("EvaluateSharrowTree: Keine Kinder für Knoten " + IntegerToString(node_index) + 
             " (" + node.feature + ") -> Signal=0");
    return 0; // No valid path found
 }
@@ -3415,14 +3415,6 @@ string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_sign
    string volume_status = volume >= debug_volume_min ? "+" : "-";
    string stoch_status = "";
    
-   if(g_last_breakrevert_signal == 1) { // BUY Signal
-      stoch_status = "+"; // Immer + für BUY-Signal
-   } else if(g_last_breakrevert_signal == -1) { // SELL Signal
-      stoch_status = "-"; // Immer - für SELL-Signal
-   } else {
-      stoch_status = "~"; // Kein Signal = neutral
-   }
-
    string news_expectation = "";
    if(news_signal == 1) {
       news_expectation = " [News→BUY]";
@@ -3434,10 +3426,15 @@ string GetSignalregelStatus(int raw_logic_signal, int news_signal, int rule_sign
    string result = "BreakRevert " + breakrevert_display + " → ADX " + DoubleToString(adx, 1) + ">" + DoubleToString(debug_adx_min, 1) + " " + adx_status;
    
    if(g_last_breakrevert_signal == 1) { // BUY
+      bool stoch_pass = (stochastic_k < debug_stoch_buy_max);
+      stoch_status = stoch_pass ? "+" : "-";
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + "<" + DoubleToString(debug_stoch_buy_max, 1) + " " + stoch_status + news_expectation;
    } else if(g_last_breakrevert_signal == -1) { // SELL
+      bool stoch_pass = (stochastic_k > debug_stoch_sell_min);
+      stoch_status = stoch_pass ? "+" : "-";
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + ">" + DoubleToString(debug_stoch_sell_min, 1) + " " + stoch_status + news_expectation;
    } else {
+      stoch_status = "~";
       result += " → Stoch " + DoubleToString(stochastic_k, 1) + " " + stoch_status + news_expectation;
    }
    
@@ -3906,7 +3903,7 @@ void ExportMultiTimeframes() {
 
 // Initialisierung
 int OnInit() {
-   Print("===== SHARROW v6.0 Initialisierung - SYMBOL SHOWCASE =====");
+   Print("===== SHARROW v2.2 Initialisierung - SYMBOL SHOWCASE =====");
    ENUM_TIMEFRAMES tf = Period();
 
    // 🚀 NEUE FUNKTION: Lade optimierte Parameter
@@ -4011,7 +4008,7 @@ int OnInit() {
    m_poisson_values.Reserve(reserve_size);
    m_exponential_values.Reserve(reserve_size);
    
-   Print("Sharrow v6.0 - Automatic News System ready");
+   Print("❤️ SHARROW für Hasi's MILLIARDEN! 💸 v2.2 - AUTOMATIC NEWS SYSTEM");
    string asset_type = GetAssetType(_Symbol);
    Print("- Symbol: ", _Symbol, " (", asset_type, "), PipSize: ", DoubleToString(g_pip_size, 8));
    // Asset-Type automatisch bestimmen für Log
@@ -4294,7 +4291,7 @@ bool IsMarketSafeForNewTrades() {
    return true;  // Sicher zu traden
 }
 
-// ===== HAUPTLOGIK - SHARROW v6.0 =====
+// ===== HAUPTLOGIK - SHARROW v2.2 =====
 void OnTick() {
    bool daily_drawdown_block = CheckDailyDrawdownGuard();
    if(daily_drawdown_block)
@@ -4927,7 +4924,7 @@ void OnTick() {
          double tp_for_order = tp_price;
          AdjustStopsForBroker(true, market_price, sl_price, tp_for_order);
 
-         bool order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 BUY (H1)");
+         bool order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v2.2 BUY (H1)");
          if(!order_success) {
             int error_code = GetLastError();
             bool invalid_stops = (trade.ResultRetcode() == TRADE_RETCODE_INVALID_STOPS) || (error_code == 130);
@@ -4937,7 +4934,7 @@ void OnTick() {
                if(retry_price > 0.0)
                   market_price = retry_price;
                AdjustStopsForBroker(true, market_price, sl_price, tp_for_order);
-               order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 BUY (H1)");
+               order_success = trade.Buy(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v2.2 BUY (H1)");
                error_code = GetLastError();
             }
 
@@ -4982,7 +4979,7 @@ void OnTick() {
       } else {
          double tp_for_order = tp_price;
          AdjustStopsForBroker(false, market_price, sl_price, tp_for_order);
-         bool order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 SELL (H1)");
+         bool order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v2.2 SELL (H1)");
          if(!order_success) {
             int error_code = GetLastError();
             bool invalid_stops = (trade.ResultRetcode() == TRADE_RETCODE_INVALID_STOPS) || (error_code == 130);
@@ -4992,7 +4989,7 @@ void OnTick() {
                if(retry_price > 0.0)
                   market_price = retry_price;
                AdjustStopsForBroker(false, market_price, sl_price, tp_for_order);
-               order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v6.0 SELL (H1)");
+               order_success = trade.Sell(lot, _Symbol, market_price, sl_price, tp_for_order, "Sharrow v2.2 SELL (H1)");
                error_code = GetLastError();
             }
 
@@ -5047,7 +5044,7 @@ void OnDeinit(const int reason) {
    
    // Quality Filter Statistiken ausgeben (Counter für interne Verwendung)
    if(quality_signals_total > 0) {
-      Print("===== SHARROW v6.0 FINAL STATISTICS (DEBUG) =====");
+      Print("===== SHARROW v2.2 FINAL STATISTICS (DEBUG) =====");
       Print("Quality Filter Performance (Internal Counters):");
       Print("- Total BreakRevert Signals: ", IntegerToString(quality_signals_total));
       Print("- Passed Quality Filter: ", IntegerToString(quality_signals_passed), " (", DoubleToString((double)quality_signals_passed/quality_signals_total*100, 1), "%)");
@@ -5058,6 +5055,6 @@ void OnDeinit(const int reason) {
       Print("- News Boost Confirms: ", IntegerToString(quality_bonus_confirms));
       Print("===== Bot gestoppt, VOLLSTÄNDIGER Export Fix funktioniert! =====");
    } else {
-      Print("===== SHARROW v6.0 gestoppt =====");
+      Print("===== SHARROW v2.2 gestoppt =====");
    }
 }

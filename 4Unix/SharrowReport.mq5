@@ -1,5 +1,5 @@
 //+------------------------------------------------------------------+
-//| GoldReport.mq5 v4.0 – Sharrow Showcase Edition                |
+//| SharrowReport.mq5 v4.0 – Sharrow Showcase Edition                |
 //| Snapshot-basierter Trading Report Bot + Symbol Data Export      |
 //| Herzstück des Sharrow Trading Systems                         |
 //| Sharrow Timer Rhythm (kein Init-Export, nur Smart Scheduler)  |
@@ -101,6 +101,12 @@ input bool EnableSymbolExport = true;                   // Enable Symbol Data Ex
 input group "=== DEBUG SETTINGS ==="
 input bool EnableDebugMode = false;                     // Debug-Modus (zeigt Snapshot-Details)
 
+input group "=== WEB TICKER EXPORT ==="
+input bool   EnableWebTicker = true;                    // Aktiviert WebTicker-State-Logs
+input string WebTickerFileName = "Sharrow-state.log"; // Ziel-Logdatei in MQL5/Files
+input int    WebTickerSlotGraceSeconds = 180;           // Zeitfenster nach xx:00
+input int    WebTickerMaxDealsPerSlot = 200;            // Sicherheitslimit Trades pro Stunde
+
 //+------------------------------------------------------------------+
 //| Account Snapshot Structure                                       |
 //+------------------------------------------------------------------+
@@ -126,9 +132,10 @@ datetime last_export_time = 0;
 datetime last_report_date = 0, last_export_date = 0;
 bool timer_initialized = false;
 bool snapshots_initialized = false;
+datetime last_webticker_slot = 0;
 
 //+------------------------------------------------------------------+
-//| Smart Rhythm Analyzer - FROM SHARROW (SIMPLIFIED!)            |
+//| Smart Rhythm Analyzer - FROM GOLDJUNGE (SIMPLIFIED!)            |
 //+------------------------------------------------------------------+
 int GetTriggerDaysForInterval(ENUM_INTERVAL interval, int &trigger_days[]) {
    ArrayFree(trigger_days);
@@ -493,11 +500,11 @@ bool ExportSymbolData()
 }
 
 //+------------------------------------------------------------------+
-//| Expert initialization function (SHARROW STYLE - NO INIT TIMER)|
+//| Expert initialization function (GOLDJUNGE STYLE - NO INIT TIMER)|
 //+------------------------------------------------------------------+
 int OnInit()
 {
-    Print("🏆 GoldReport v3.0 - ULTIMATE Snapshot Edition + Symbol Export");
+    Print("🏆 SharrowReport v3.0 - ULTIMATE Snapshot Edition + Symbol Export");
     Print("📸 Sharrow-Style Timer Logic - NO Init Timer!");
     
     // TELEGRAM VALIDATION - Multi-Chat Support
@@ -531,10 +538,10 @@ int OnInit()
     // Initialize snapshots
     InitializeSnapshots();
     
-    // SHARROW STYLE: Sofortiger Export bei Initialisierung (OHNE 10s Timer!)
+    // GOLDJUNGE STYLE: Sofortiger Export bei Initialisierung (OHNE 10s Timer!)
     if(EnableSymbolExport)
     {
-        Print("🚀 SHARROW STYLE: Sofortiger Symbol Export bei Initialisierung...");
+        Print("🚀 GOLDJUNGE STYLE: Sofortiger Symbol Export bei Initialisierung...");
         bool export_success = ExportSymbolData();
         if(export_success)
         {
@@ -552,7 +559,7 @@ int OnInit()
     
     timer_initialized = true;
     string interval_text = GetIntervalText(ReportInterval);
-    Print("✅ GoldReport v3.0 initialized successfully!");
+    Print("✅ SharrowReport v3.0 initialized successfully!");
     
     if(telegram_configured)
     {
@@ -588,12 +595,12 @@ void OnDeinit(const int reason)
     if(timer_initialized)
         EventKillTimer();
     
-    Print("👋 GoldReport v3.0 stopped. Snapshots cleared from memory.");
+    Print("👋 SharrowReport v3.0 stopped. Snapshots cleared from memory.");
     Print("📸 Next restart will create fresh snapshots!");
 }
 
 //+------------------------------------------------------------------+
-//| Timer function - SHARROW STYLE (SIMPLIFIED!)                 |
+//| Timer function - GOLDJUNGE STYLE (SIMPLIFIED!)                 |
 //+------------------------------------------------------------------+
 void OnTimer()
 {
@@ -620,7 +627,7 @@ void OnTimer()
     if(true)  // Immer prüfen, unabhängig von Sekunden
     {
         if(EnableDebugMode) Print("🔍 DEBUG: Timer reached export logic check at ", TimeToString(current_time, TIME_DATE|TIME_MINUTES|TIME_SECONDS));
-        // SHARROW STYLE: EINFACHE Timer-Logik
+        // GOLDJUNGE STYLE: EINFACHE Timer-Logik
         datetime now = current_time;
         MqlDateTime time_struct;
         TimeToStruct(now, time_struct);  // Verwende current_time (= TimeCurrent() von oben)
@@ -640,7 +647,7 @@ void OnTimer()
         int days_since_monday = (int)((now - last_monday) / 86400);
         if(EnableDebugMode) Print("🔍 DEBUG: Today is day ", days_since_monday, " since Monday, Time: ", time_struct.hour, ":", StringFormat("%02d", time_struct.min));
         
-        // ===== EXPORT LOGIC - SHARROW STYLE =====
+        // ===== EXPORT LOGIC - GOLDJUNGE STYLE =====
         bool export_triggered = false;
         if(EnableDebugMode) Print("🔍 DEBUG: Checking export trigger - Interval: ", (int)ExportInterval, ", Hour: ", (int)ExportHour, ", Minute: ", (int)ExportMinute);
         
@@ -735,7 +742,7 @@ void OnTimer()
         static bool rhythm_info_shown = false;
         if(!rhythm_info_shown) {
             string day_names[] = {"Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"};
-            Print("🎵 SHARROW REPORT SMART RHYTHM ANALYZER gestartet:");
+            Print("🎵 GOLDREPORT SMART RHYTHM ANALYZER gestartet:");
             Print("📅 Heute: ", day_names[days_since_monday], " (Tag ", days_since_monday, " seit Montag)");
             
             // Report Rhythm Info
@@ -767,6 +774,8 @@ void OnTimer()
             rhythm_info_shown = true;
         }
     }
+    
+    WebTickerMaybeLog();
 }
 
 //+------------------------------------------------------------------+
@@ -876,7 +885,7 @@ string FormatSnapshotMessage(double balance_change, double equity_change, string
     string start_date = TimeToString(last_snapshot.snapshot_time, TIME_DATE);
     string end_date = TimeToString(current_snapshot.snapshot_time, TIME_DATE);
     
-    message += "🏆 GoldReport " + period_name + " (" + start_date + " - " + end_date + ")\n";
+    message += "🏆 SharrowReport " + period_name + " (" + start_date + " - " + end_date + ")\n";
     message += "💰 Balance-Änderung: " + DoubleToString(balance_change, 2) + "€\n";
     message += "📈 Equity-Entwicklung: " + DoubleToString(equity_change, 2) + "€\n";
     message += "📊 Aktuelle Balance: " + DoubleToString(current_snapshot.balance, 2) + "€\n";
@@ -915,6 +924,209 @@ string FormatSnapshotMessage(double balance_change, double equity_change, string
     }
     
     return message;
+}
+
+//+------------------------------------------------------------------+
+//| WebTicker Integration                                           |
+//+------------------------------------------------------------------+
+void WebTickerMaybeLog()
+{
+    if(!EnableWebTicker)
+        return;
+    
+    datetime now = TimeCurrent();
+    if(now == 0)
+        return;
+    
+    datetime slot = now - (now % 3600);  // aktuelle Stunde
+    if(slot <= 0)
+        return;
+    
+    if(last_webticker_slot != 0 && slot <= last_webticker_slot)
+        return; // schon verarbeitet
+    
+    if(now - slot > WebTickerSlotGraceSeconds)
+        return; // zu spät für diesen Slot
+    
+    datetime from_time = slot - 3600;
+    datetime to_time = slot;
+    
+    bool trades_logged = WebTickerLogTrades(from_time, to_time);
+    bool snapshot_logged = WebTickerLogSnapshot(to_time);
+    
+    if(snapshot_logged)
+    {
+        last_webticker_slot = slot;
+        if(EnableDebugMode)
+            Print("🧭 WebTicker Slot ", TimeToString(slot, TIME_DATE|TIME_MINUTES), " abgeschlossen (Trades: ", trades_logged ? "ja" : "nein", ")");
+    }
+}
+
+bool WebTickerLogTrades(datetime from_time, datetime to_time)
+{
+    if(!HistorySelect(from_time, to_time))
+    {
+        Print("❌ WebTicker: HistorySelect fehlgeschlagen für ", TimeToString(from_time, TIME_DATE|TIME_MINUTES), " - ", TimeToString(to_time, TIME_DATE|TIME_MINUTES));
+        return false;
+    }
+    
+    int total_deals = (int)HistoryDealsTotal();
+    int logged = 0;
+    
+    for(int i = total_deals - 1; i >= 0; --i)
+    {
+        ulong ticket = HistoryDealGetTicket(i);
+        if(ticket == 0)
+            continue;
+        
+        datetime deal_time = (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
+        if(deal_time > to_time)
+            continue;
+        if(deal_time < from_time)
+            break; // Deals sind zeitlich sortiert
+        
+        ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if(entry != DEAL_ENTRY_OUT && entry != DEAL_ENTRY_INOUT)
+            continue;
+        
+        double volume = HistoryDealGetDouble(ticket, DEAL_VOLUME);
+        double profit = HistoryDealGetDouble(ticket, DEAL_PROFIT)
+                      + HistoryDealGetDouble(ticket, DEAL_SWAP)
+                      + HistoryDealGetDouble(ticket, DEAL_COMMISSION);
+        string symbol = HistoryDealGetString(ticket, DEAL_SYMBOL);
+        string comment = HistoryDealGetString(ticket, DEAL_COMMENT);
+        ENUM_DEAL_TYPE order_type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(ticket, DEAL_TYPE);
+        ENUM_DEAL_REASON reason = (ENUM_DEAL_REASON)HistoryDealGetInteger(ticket, DEAL_REASON);
+        double price = HistoryDealGetDouble(ticket, DEAL_PRICE);
+        ulong position_id = (ulong)HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+        
+        datetime opened_at = WebTickerFindEntryTime(i, position_id, deal_time);
+        
+        bool is_tp = (reason == DEAL_REASON_TP);
+        bool is_sl = (reason == DEAL_REASON_SL);
+        string comment_lower = comment;
+        StringToLower(comment_lower);
+        if(!is_tp && StringFind(comment_lower, "[tp") == 0)
+        {
+            is_tp = true;
+        }
+        if(!is_sl && StringFind(comment_lower, "[sl") == 0)
+        {
+            is_sl = true;
+        }
+
+        string json = StringFormat("{\"type\":\"trade\",\"ticket\":%s,\"symbol\":\"%s\",\"volume\":%.2f,\"profit\":%.2f,\"price\":%.5f,\"opened_at\":\"%s\",\"closed_at\":\"%s\",\"order_type\":\"%s\",\"exit_reason\":\"%s\",\"comment\":\"%s\",\"tp_label\":%s,\"sl_label\":%s}",
+                                   WebTickerTicketToString(ticket),
+                                   WebTickerJsonEscape(symbol),
+                                   volume,
+                                   profit,
+                                   price,
+                                   WebTickerIso8601(opened_at),
+                                   WebTickerIso8601(deal_time),
+                                   WebTickerJsonEscape(EnumToString(order_type)),
+                                   WebTickerJsonEscape(EnumToString(reason)),
+                                   WebTickerJsonEscape(comment),
+                                   is_tp ? "\"Hit\"" : "null",
+                                   is_sl ? "\"Hit\"" : "null");
+        
+        if(WebTickerWriteLine(deal_time, json))
+            logged++;
+        
+        if(logged >= WebTickerMaxDealsPerSlot)
+        {
+            Print("⚠️ WebTicker: Deal-Limit erreicht (", WebTickerMaxDealsPerSlot, ")");
+            break;
+        }
+    }
+    
+    if(logged > 0)
+        Print("📄 WebTicker: ", logged, " Trades für Slot ", TimeToString(to_time, TIME_DATE|TIME_MINUTES), " geloggt");
+    else
+        Print("📄 WebTicker: Keine Trades im Slot ", TimeToString(to_time, TIME_DATE|TIME_MINUTES));
+    
+    return true;
+}
+
+datetime WebTickerFindEntryTime(int start_index, ulong position_id, datetime fallback_time)
+{
+    if(position_id == 0)
+        return fallback_time;
+    
+    for(int i = start_index; i >= 0 && start_index - i <= 500; --i)
+    {
+        ulong ticket = HistoryDealGetTicket(i);
+        if(ticket == 0)
+            continue;
+        ulong deal_pos = (ulong)HistoryDealGetInteger(ticket, DEAL_POSITION_ID);
+        if(deal_pos != position_id)
+            continue;
+        
+        ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(ticket, DEAL_ENTRY);
+        if(entry == DEAL_ENTRY_IN || entry == DEAL_ENTRY_INOUT)
+            return (datetime)HistoryDealGetInteger(ticket, DEAL_TIME);
+    }
+    
+    return fallback_time;
+}
+
+bool WebTickerLogSnapshot(datetime slot_time)
+{
+    AccountSnapshot snapshot = TakeAccountSnapshot();
+    string json = StringFormat("{\"type\":\"snapshot\",\"timestamp\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"floating\":%.2f}",
+                               WebTickerIso8601(slot_time),
+                               snapshot.balance,
+                               snapshot.equity,
+                               snapshot.floating_profit);
+    return WebTickerWriteLine(slot_time, json);
+}
+
+string WebTickerIso8601(datetime value)
+{
+    MqlDateTime ts;
+    TimeToStruct(value, ts);
+    return StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ", ts.year, ts.mon, ts.day, ts.hour, ts.min, ts.sec);
+}
+
+string WebTickerJsonEscape(string value)
+{
+    StringReplace(value, "\\", "\\\\");
+    StringReplace(value, "\"", "\\\"");
+    StringReplace(value, "\r", "");
+    StringReplace(value, "\n", "\\n");
+    return value;
+}
+
+string WebTickerTicketToString(ulong ticket)
+{
+    return StringFormat("%I64u", ticket);
+}
+
+bool WebTickerWriteLine(datetime stamp, const string payload)
+{
+    int handle = FileOpen(WebTickerFileName, FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE);
+    if(handle == INVALID_HANDLE)
+    {
+        handle = FileOpen(WebTickerFileName, FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE);
+        if(handle != INVALID_HANDLE)
+        {
+            FileClose(handle);
+            handle = FileOpen(WebTickerFileName, FILE_READ|FILE_WRITE|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ|FILE_SHARE_WRITE);
+        }
+    }
+    if(handle == INVALID_HANDLE)
+    {
+        Print("❌ WebTicker: Kann Datei ", WebTickerFileName, " nicht öffnen. Fehler ", GetLastError());
+        return false;
+    }
+    
+    FileSeek(handle, 0, SEEK_END);
+    string log_line = StringFormat("[%s] [WEB_TICKER] %s",
+                                   TimeToString(stamp, TIME_DATE|TIME_MINUTES|TIME_SECONDS),
+                                   payload);
+    FileWriteString(handle, log_line);
+    FileWriteString(handle, "\r\n");
+    FileClose(handle);
+    return true;
 }
 
 //+------------------------------------------------------------------+

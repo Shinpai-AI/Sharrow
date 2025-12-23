@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Train-KI-Bot.py
-Goldjunge ML-Pipeline (Refactor 2025-09)
+Sharrow ML-Pipeline (Refactor 2025-09)
 """
 
 import argparse
@@ -475,6 +475,72 @@ def _calibrate_thresholds(
     return result
 
 
+def _compute_trend_strength_thresholds(
+    df_signals: Optional[pd.DataFrame],
+    defaults: Dict[str, float],
+    config: Dict,
+) -> Dict[str, float]:
+    """Ableitung von Trend-Schwellenwerten (ADX/Volumen/ATR) pro Symbol."""
+    trend_cfg = config.get("trend_strong", {})
+
+    def _cfg_value(key: str, default: float, clamp_quantile: bool = False) -> float:
+        value = trend_cfg.get(key, default)
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            value = default
+        if clamp_quantile:
+            value = max(0.0, min(1.0, value))
+        return value
+
+    adx_quantile = _cfg_value("adx_quantile", 0.75, clamp_quantile=True)
+    adx_factor = _cfg_value("adx_factor", 1.8)
+    volume_quantile = _cfg_value("volume_quantile", 0.75, clamp_quantile=True)
+    volume_factor = _cfg_value("volume_factor", 2.0)
+    atr_quantile = _cfg_value("atr_quantile", 0.75, clamp_quantile=True)
+    atr_factor = _cfg_value("atr_factor", 1.5)
+    atr_default = _cfg_value("atr_default", 0.0008)
+
+    fallback_adx = max(defaults["adx_min"] * adx_factor, defaults["adx_min"] + 10.0)
+    fallback_vol = max(defaults["volume_min"] * volume_factor, defaults["volume_min"] + 1000.0)
+    fallback_atr = max(atr_default, 1e-6)
+
+    if df_signals is None or df_signals.empty:
+        return {
+            "trend_adx_strong": float(fallback_adx),
+            "trend_volume_strong": float(fallback_vol),
+            "trend_atr_strong": float(fallback_atr),
+        }
+
+    def _quantile(column: str, q: float, default: float) -> float:
+        if column not in df_signals.columns:
+            return default
+        series = df_signals[column].dropna()
+        if series.empty:
+            return default
+        try:
+            return float(series.quantile(q))
+        except Exception:
+            return default
+
+    adx_med = _quantile("adx", 0.50, defaults["adx_min"])
+    adx_quant = _quantile("adx", adx_quantile, fallback_adx)
+    vol_med = _quantile("Volume", 0.50, defaults["volume_min"])
+    vol_quant = _quantile("Volume", volume_quantile, fallback_vol)
+    atr_med = _quantile("atr", 0.50, fallback_atr / max(atr_factor, 1.0))
+    atr_quant = _quantile("atr", atr_quantile, fallback_atr)
+
+    trend_adx = max(adx_quant, adx_med * adx_factor, fallback_adx)
+    trend_vol = max(vol_quant, vol_med * volume_factor, fallback_vol)
+    trend_atr = max(atr_quant, atr_med * atr_factor, fallback_atr)
+
+    return {
+        "trend_adx_strong": float(trend_adx),
+        "trend_volume_strong": float(trend_vol),
+        "trend_atr_strong": float(trend_atr),
+    }
+
+
 def compute_intelligent_parameters(
     df_signals: pd.DataFrame,
     config: Dict,
@@ -496,6 +562,8 @@ def compute_intelligent_parameters(
     break_cfg = _calculate_breakrevert_thresholds(df_signals, config)
     calibrated["breakout_threshold"] = break_cfg["breakout_threshold"]
     calibrated["mean_reversion_threshold"] = break_cfg["mean_reversion_threshold"]
+    trend_cfg = _compute_trend_strength_thresholds(df_signals, defaults, config)
+    calibrated.update(trend_cfg)
     return calibrated
 
 
@@ -887,6 +955,15 @@ def export_rules(
             handle.write(f"Stoch_Buy_Max: {float(intelligent.get('stoch_buy_max', 0.0)):.1f}\n")
             handle.write(f"Stoch_Sell_Min: {float(intelligent.get('stoch_sell_min', 0.0)):.1f}\n")
             handle.write(f"Volume_Min: {float(intelligent.get('volume_min', 0.0)):.0f}\n")
+            trend_adx = float(intelligent.get("trend_adx_strong", 0.0) or 0.0)
+            trend_vol = float(intelligent.get("trend_volume_strong", 0.0) or 0.0)
+            trend_atr = float(intelligent.get("trend_atr_strong", 0.0) or 0.0)
+            if trend_adx > 0:
+                handle.write(f"Trend_ADX_Strong: {trend_adx:.1f}\n")
+            if trend_vol > 0:
+                handle.write(f"Trend_Volume_Strong: {trend_vol:.0f}\n")
+            if trend_atr > 0:
+                handle.write(f"Trend_ATR_Strong: {trend_atr:.5f}\n")
         handle.write(f"LastUpdate: {pd.Timestamp.utcnow().isoformat()}\n")
         handle.write("\n// === DECISION TREE RULES ===\n")
         for line in tree_lines:
@@ -1210,7 +1287,7 @@ def write_summary(results: List[SymbolResult], reports_dir: Path, trading_enable
     reports_dir.mkdir(parents=True, exist_ok=True)
     summary_path = reports_dir / "training_summary.md"
     with summary_path.open("w", encoding='utf-8') as handle:
-        handle.write("# Goldjunge Trainingsübersicht\n\n")
+        handle.write("# Sharrow Trainingsübersicht\n\n")
         if not trading_enabled:
             handle.write("_TradeActive=false – ML deaktiviert, nur Standby-Rules erstellt._\n\n")
         if not results:
@@ -1265,7 +1342,7 @@ def build_telegram_message(
             ""
         ])
     lines.extend([
-        "🤖 Goldjunge Standard",
+        "🤖 Sharrow Standard",
         "",
         f"🏦 Konto: {format_currency(balance, account_currency)}",
         f"💰 Einsatz: {format_currency(risk_amount, account_currency)}",
@@ -1343,7 +1420,7 @@ def send_telegram_summary(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Goldjunge Train-KI-Bot")
+    parser = argparse.ArgumentParser(description="Sharrow Train-KI-Bot")
     parser.add_argument("--config", type=Path, default=CONFIG_DEFAULT)
     parser.add_argument("--data-dir", type=Path, default=None)
     parser.add_argument("--rules-dir", type=Path, default=None)

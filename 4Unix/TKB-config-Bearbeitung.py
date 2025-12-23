@@ -292,7 +292,7 @@ def load(path=CONFIG_PATH):
 
 def default_config():
     return {
-        "project": {"name": "Sharrow AI Trader", "version": "3.0"},
+        "project": {"name": "Sharrow (Ray)", "version": "3.0"},
         "paths": {
             "mt5_path": "/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5",
             "mt5_files_subpath": "MQL5/Files",
