@@ -26,36 +26,40 @@ Alle personenbezogenen Hinweise wurden entfernt; Branding und Credits zeigen auf
 
 ```
 Sharrow/
-├── 4Unix/                      # Paket für Linux/Mac (Bash + Wine Support)
+├── 4Unix/                      # Linux/Mac Bundle (Wine-kompatibel)
 │   ├── Sharrow.mq5             # MT5 Expert Advisor
 │   ├── SharrowReport.mq5       # Reporting / Dashboard EA
-│   ├── Sharrow-Fibel.md        # Architektur- & Referenzdokument (DE)
-│   ├── Sharrow-Casino.md       # 🎰 Casino-Modus Dokumentation (v1.5)
-│   ├── Sharrow-Ersteinrichtung.md
+│   ├── RUN-*.sh                # Automation Scripts (News, Training, Log-Cleanup)
 │   ├── Train-KI-Bot.py         # ML-Training & Rules-Generator
 │   ├── TKB-News-Bot.py         # News-Collector & Sentiment-Filter
 │   ├── TKB-Data-Export.py      # Historik-Export & *_extend.csv Merge
-│   ├── TKB-config.json         # Zentrales Config-File (Linux/Wine Defaults)
-│   ├── RUN-*.sh                # Automation Scripts (Bash)
-│   └── RUN-MT5-Log-Cleaner.sh  # Log-Cleanup
+│   ├── TKB-config-Bearbeitung.py
+│   └── TKB-config.json         # OS-spezifische Defaults
 │
-├── 4Windows/                   # Paket für Windows (Batch)
-│   ├── Sharrow.mq5             # MT5 Expert Advisor
+├── 4Windows/                   # Windows Bundle (Batch)
+│   ├── Sharrow.mq5
 │   ├── SharrowReport.mq5
-│   ├── Sharrow-Fibel.md
-│   ├── Sharrow-Casino.md       # 🎰 Casino-Modus Dokumentation (v1.5)
-│   ├── Sharrow-Ersteinrichtung.md
+│   ├── RUN-*.bat               # Automation Scripts (Batch)
 │   ├── Train-KI-Bot.py
 │   ├── TKB-News-Bot.py
 │   ├── TKB-Data-Export.py
-│   ├── TKB-config.json         # Windows Defaults (Pfad, python)
-│   └── RUN-*.bat               # Automation Scripts (Batch)
+│   ├── TKB-config-Bearbeitung.py
+│   └── TKB-config.json
 │
-├── sharrow-logo.png            # Logo (png)
+├── Doku/                       # Referenz- & Setup-Dokumente (DE)
+│   ├── BreakRevert.md
+│   ├── Goldjunge-Casino.md
+│   ├── Goldjunge-Fibel.md
+│   ├── SL-Trailing.md
+│   ├── VPS-Linux-Ersteinrichtung_template.md
+│   └── Wochenausblick-Skript.md
+│
+├── 4Unix.tar.gz                # ZIP/TAR Bundles für Distribution
+├── 4Windows.tar.gz
+├── Patch-History.md            # Chronik der Patch-Releases
+├── sharrow-logo.png
 └── README.md
 ```
-
-> Detaillierte Entwicklerdankesliste (`CONTRIBUTORS.md`) liegt jeweils in `4Unix/` und `4Windows/`.
 
 ---
 
