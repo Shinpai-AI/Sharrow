@@ -1,20 +1,22 @@
 # 📊 Sharrow Wochenausblick - Forex Market Analysis System
 
-**Version:** HYBRID v2.0
+**Version:** 3-STUFEN-SYSTEM v3.0 (HYBRID + trade_active Intelligence)
 **Status:** Production-Ready ✅
 **Kritikalität:** 🔴 **HÖCHSTE PRIORITÄT** - Ohne Wochenausblick = Verlustreiche Trades!
-**Entwickler:** Shinpai-AI von Hannes Kell
+**Entwickler:** Shinpai-AI (Hannes Kell)
 
 ---
 
 ## 🎯 WAS IST DER WOCHENAUSBLICK?
 
-Der Wochenausblick ist ein **AI-gestütztes Forex-Analyse-System**, das die kommende Handelswoche analysiert und für **jedes aktive Währungspaar** eine Entscheidung trifft:
+Der Wochenausblick ist ein **AI-gestütztes Forex-Analyse-System**, das die kommende Handelswoche analysiert und **3 kritische Entscheidungen** trifft:
 
-- **🟢 SWING-Mode:** Trends laufen lassen mit Trailing Stop (swing = true)
-- **🔴 ATR-Mode:** Defensive trades mit fixen TP-Zielen (swing = false, TP je nach Volatilität)
+**🚦 3-STUFEN-SYSTEM:**
+- **🟢 STUFE 1: SWING-Mode** → Optimale Bedingungen, Trends laufen lassen (trade_active=true, swing=true)
+- **⚠️ STUFE 2: ATR-Mode** → Defensive Trades, schnelle Exits (trade_active=true, swing=false)
+- **🔴 STUFE 3: PAUSE** → Markt-Chaos, kein Trading (trade_active=false)
 
-**Das Ziel:** Sharrow läuft nicht blind, sondern **passt sich dem Markt an!**
+**Das Ziel:** Sharrow läuft nicht blind, sondern **passt sich dem Markt an UND weiß, wann NICHT zu traden ist!**
 
 ---
 
@@ -143,37 +145,36 @@ Welche Pairs haben high/low volatility diese Woche?
 
 ---
 
-### **SCHRITT 3: Entscheidung pro Symbol**
+### **SCHRITT 3: 3-STUFEN-ENTSCHEIDUNG**
 
-Für jedes Währungspaar entscheiden:
+**⚡ SHARROW'S DNA VERSTEHEN:**
 
-#### **🔴 ATR-MODE (Defensive Trading)**
+**✅ Sharrow liebt:**
+- Ruhige, stabile Märkte
+- Klare Trends (up oder down, egal!)
+- Moderate Volatilität
+- 95% Winrate in optimalen Bedingungen!
 
-**WANN:**
-- ❌ Viele High-Impact Events diese Woche
-- ❌ Range-bound markets (keine klaren Trends)
-- ❌ Hohe/unpredictable Volatilität erwartet
-- ❌ Policy uncertainty, geopolitische Spannungen
-
-**TRADING-CONFIG:**
-- **swing = false** (in config)
-- **TP anpassen** (im tp_setting Bereich):
-  - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
-  - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (oder höher, aber nicht übertreiben!)
-- Exit: Schnell raus bei fixen TP-Zielen
-- Ziel: Kapitalsicherung, keine Runner-Risks
+**❌ Sharrow hasst:**
+- Central Bank Meeting Days (choppy markets!)
+- FOMO-Markets (ultra schnelle Reversals!)
+- False Breakouts (Signal → sofort Reversal → Stop-Loss!)
+- Event-driven Chaos (unpredictable!)
 
 ---
 
-#### **🟢 SWING-MODE (Trend-Following Trading)**
+### **🚦 DIE 3 STUFEN - Systematische Entscheidung**
+
+#### **🟢 STUFE 1: SWING! (Optimale Bedingungen)**
 
 **WANN:**
-- ✅ Klare Trends (strong directional moves)
-- ✅ Wenig/keine Major-Events diese Woche
+- ✅ Ruhige Woche, klare Trends
+- ✅ Keine Major Central Bank Events
 - ✅ Stabile bis moderate Volatilität
 - ✅ Gute technische Setups (Breakouts, starke Support/Resistance)
 
 **TRADING-CONFIG:**
+- **trade_active = true**
 - **swing = true** (in config)
 - **TP NICHT anfassen!** (Läuft mit Trailing Stop!)
 - Exit: Trailing Stop automatisch
@@ -181,28 +182,64 @@ Für jedes Währungspaar entscheiden:
 
 ---
 
-### **SCHRITT 4: Output im HYBRID-Format**
+#### **⚠️ STUFE 2: ATR! (Defensive Trading)**
 
-Die AI liefert die Analyse im **HYBRID v2.0 Format:**
+**WANN:**
+- ⚠️ Moderate High-Impact Events (CPI, NFP, etc. - NICHT Central Bank Meetings!)
+- ⚠️ Dünne Liquidität (z.B. Year-End, Feiertage)
+- ⚠️ Range-bound markets (keine klaren Trends)
+- ⚠️ Moderate aber handelbare Volatilität
 
-#### **Format 1: GENERELL + EXCEPTIONS (Standard!)**
-
-```
-SWING! 🟢
-
-Ausnahmen (ATR!):
-- GBP/USD: BOE Meeting (Do)
-- USD/JPY: BOJ Intervention Risk
-```
-
-**Bedeutung:** Alle Symbole auf SWING, außer die genannten → Die auf ATR!
+**TRADING-CONFIG:**
+- **trade_active = true**
+- **swing = false** (in config)
+- **TP anpassen** (im tp_setting Bereich):
+  - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
+  - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (max!)
+- Exit: Schnell raus bei fixen TP-Zielen
+- Ziel: Kapitalsicherung, kleine sichere Gewinne
 
 ---
 
-#### **Format 2: NUR EXCEPTIONS (bei homogenem Markt)**
+#### **🔴 STUFE 3: PAUSE! (Sharrow's Todfeinde aktiv!)**
+
+**WANN:**
+- 🚨 **Central Bank Meeting Sandwich!** (z.B. FOMC → ECB → BOJ innerhalb 1 Woche!)
+- 🚨 **Central Bank Meeting Day selbst!** (Tag des Rate-Decisions!)
+- 🚨 **Ultra choppy, FOMO-Markets** (false breakouts überall!)
+- 🚨 **Unpredictable event-driven chaos**
+
+**TRADING-CONFIG:**
+- **trade_active = false** ← **KEIN TRADING!**
+- Begründung: Sharrow interpretiert Signale falsch → Stop-Loss Massaker!
+
+**Real-World Beispiel:**
+Ein Trader erlebte während eines ECB-Meeting-Tages 15+ Stop-Loss hits (CHFJPY, AUDUSD, CADCHF). Pattern: Trade öffnet → sofort Reversal → SL → neuer Trade → wieder SL! Verlust: ~€4.50 statt potentiellem +€2-3 Gewinn. Lösung: `trade_active=false` für Central Bank Meeting Days!
+
+---
+
+### **SCHRITT 4: Output im 3-STUFEN + HYBRID Format**
+
+Die AI liefert die Analyse im **3-STUFEN-SYSTEM v3.0 Format:**
+
+#### **Format 1: STUFE 3 - PAUSE! (trade_active=false)**
 
 ```
-ATR! ⚠️
+🔴 PAUSE! (trade_active=false)
+
+Grund: ECB Meeting (Mi-Do) = Central Bank Chaos!
+Pattern: Choppy markets, false breakouts → Sharrow's Todfeind!
+Empfehlung: Donnerstag Abend wieder starten (nach Decision).
+```
+
+**Bedeutung:** Komplettes Trading pausieren! Keine Trades diese Woche!
+
+---
+
+#### **Format 2: STUFE 2 - ATR + EXCEPTIONS (trade_active=true)**
+
+```
+⚠️ ATR! (trade_active=true)
 
 Ausnahmen (SWING ok):
 - EUR/GBP: Kein USD-Risk, stable
@@ -213,19 +250,35 @@ Ausnahmen (SWING ok):
 
 ---
 
-#### **Format 3: ALLE GLEICH (selten!)**
+#### **Format 3: STUFE 1 - SWING + EXCEPTIONS (trade_active=true)**
 
 ```
-SWING! (Ruhige Woche, klare Trends!)
+🟢 SWING! (trade_active=true)
+
+Ausnahmen (ATR!):
+- GBP/USD: CPI Release (Di)
+- USD/JPY: NFP Risk (Fr)
+```
+
+**Bedeutung:** Alle Symbole auf SWING, außer die genannten → Die auf ATR!
+
+---
+
+#### **Format 4: ALLE GLEICH (selten!)**
+
+```
+🟢 SWING! (trade_active=true)
+Ruhige Woche, klare Trends - optimal für Sharrow!
 ```
 
 ODER
 
 ```
-ATR! (FOMC + hohe Volatilität überall!)
+⚠️ ATR! (trade_active=true)
+Dünne Liquidität (Year-End), defensive spielen!
 ```
 
-**Bedeutung:** Alle 21 Symbole bekommen das gleiche Setting!
+**Bedeutung:** Alle Symbole bekommen das gleiche Setting!
 
 ---
 
@@ -243,12 +296,17 @@ Nach dem Wochenausblick:
   - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
   - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (max!)
 
-### **3. NOTFALL: Markt-Katastrophe Woche**
+### **3. STUFE 3: PAUSE (trade_active=false)**
 
-Wenn die KI sagt: "Markt wird unberechenbar!" → **Ganze Woche aussetzen!**
+**WANN genau:**
+- Central Bank Meeting Sandwich (z.B. FOMC → ECB → BOJ innerhalb 1 Woche)
+- Central Bank Meeting Day selbst (Tag der Rate-Decision!)
+- Ultra choppy, FOMO-Markets (AI erkennt das!)
+
+**UMSETZUNG:**
 - In config (ganz oben): **trade_active = false**
-- Sharrow macht GAR NICHTS die ganze Woche!
-- Nächste Woche: **trade_active = true** wieder aktivieren
+- Sharrow macht GAR NICHTS die ganze Woche (oder nur an kritischen Tagen)!
+- Nach dem Event: **trade_active = true** wieder aktivieren
 
 ### **4. NOTFALL: Einzelne Katastrophen-Tage**
 
@@ -334,9 +392,17 @@ Wenn nur 1-2 Tage kritisch (z.B. Mi + Fr):
 **⚡ REMEMBER:**
 > "Sharrow ist intelligent - aber nicht hellsehend!
 > Ohne Wochenausblick tradet er im Blindflug.
-> Mit Wochenausblick tradet er mit Radar!" 🎯
+> Mit Wochenausblick tradet er mit Radar - und weiß wann er NICHT traden soll!" 🎯
+
+---
+
+**🔥 3-STUFEN-SYSTEM v3.0:**
+- **STUFE 1 (SWING):** Optimale Bedingungen → Runner laufen lassen!
+- **STUFE 2 (ATR):** Defensive spielen → Kleine sichere Gewinne!
+- **STUFE 3 (PAUSE):** Central Bank Chaos → KEIN TRADING!
 
 ---
 
 *Made with 💚 by Shinpai-AI (Hannes Kell)*
-*Für profitable, adaptive Forex-Trades!*
+*For profitable, adaptive Forex-Trades!*
+*Open Source - Community-Driven - Professional*
