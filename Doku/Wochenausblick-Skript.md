@@ -1,22 +1,20 @@
 # 📊 Sharrow Wochenausblick - Forex Market Analysis System
 
-**Version:** 3-STUFEN-SYSTEM v3.0 (HYBRID + trade_active Intelligence)
+**Version:** HYBRID v2.0
 **Status:** Production-Ready ✅
 **Kritikalität:** 🔴 **HÖCHSTE PRIORITÄT** - Ohne Wochenausblick = Verlustreiche Trades!
-**Entwickler:** Shinpai-AI (Hannes Kell)
+**Entwickler:** Shinpai-AI von Hannes Kell
 
 ---
 
 ## 🎯 WAS IST DER WOCHENAUSBLICK?
 
-Der Wochenausblick ist ein **AI-gestütztes Forex-Analyse-System**, das die kommende Handelswoche analysiert und **3 kritische Entscheidungen** trifft:
+Der Wochenausblick ist ein **AI-gestütztes Forex-Analyse-System**, das die kommende Handelswoche analysiert und für **jedes aktive Währungspaar** eine Entscheidung trifft:
 
-**🚦 3-STUFEN-SYSTEM:**
-- **🟢 STUFE 1: SWING-Mode** → Optimale Bedingungen, Trends laufen lassen (trade_active=true, swing=true)
-- **⚠️ STUFE 2: ATR-Mode** → Defensive Trades, schnelle Exits (trade_active=true, swing=false)
-- **🔴 STUFE 3: PAUSE** → Markt-Chaos, kein Trading (trade_active=false)
+- **🟢 SWING-Mode:** Trends laufen lassen mit Trailing Stop (swing = true)
+- **🔴 ATR-Mode:** Defensive trades mit fixen TP-Zielen (swing = false, TP je nach Volatilität)
 
-**Das Ziel:** Sharrow läuft nicht blind, sondern **passt sich dem Markt an UND weiß, wann NICHT zu traden ist!**
+**Das Ziel:** Sharrow läuft nicht blind, sondern **passt sich dem Markt an!**
 
 ---
 
@@ -78,6 +76,16 @@ Der Wochenausblick ist **KEIN automatisches Python-Skript!**
 - ✅ Sonntag 23 Uhr: Forex-Markt öffnet wieder → Settings müssen fertig sein!
 
 **⚠️ WICHTIG:** Wenn du den Wochenausblick skipst, tradet Sharrow blind in die neue Woche!
+
+---
+
+## 📅 WELCHE WOCHE WIRD ANALYSIERT?
+
+Die Handelswoche (Mo-Fr), die am kommenden Montag beginnt.
+
+**Beispiel:**
+- Heute ist Donnerstag, 02.01.2026
+- "Nächste Woche" = Die Woche ab dem nächsten Montag (05.01.-09.01.2026)
 
 ---
 
@@ -145,36 +153,37 @@ Welche Pairs haben high/low volatility diese Woche?
 
 ---
 
-### **SCHRITT 3: 3-STUFEN-ENTSCHEIDUNG**
+### **SCHRITT 3: Entscheidung pro Symbol**
 
-**⚡ SHARROW'S DNA VERSTEHEN:**
+Für jedes Währungspaar entscheiden:
 
-**✅ Sharrow liebt:**
-- Ruhige, stabile Märkte
-- Klare Trends (up oder down, egal!)
-- Moderate Volatilität
-- 95% Winrate in optimalen Bedingungen!
+#### **🔴 ATR-MODE (Defensive Trading)**
 
-**❌ Sharrow hasst:**
-- Central Bank Meeting Days (choppy markets!)
-- FOMO-Markets (ultra schnelle Reversals!)
-- False Breakouts (Signal → sofort Reversal → Stop-Loss!)
-- Event-driven Chaos (unpredictable!)
+**WANN:**
+- ❌ Viele High-Impact Events diese Woche
+- ❌ Range-bound markets (keine klaren Trends)
+- ❌ Hohe/unpredictable Volatilität erwartet
+- ❌ Policy uncertainty, geopolitische Spannungen
+
+**TRADING-CONFIG:**
+- **swing = false** (in config)
+- **TP anpassen** (im tp_setting Bereich):
+  - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
+  - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (oder höher, aber nicht übertreiben!)
+- Exit: Schnell raus bei fixen TP-Zielen
+- Ziel: Kapitalsicherung, keine Runner-Risks
 
 ---
 
-### **🚦 DIE 3 STUFEN - Systematische Entscheidung**
-
-#### **🟢 STUFE 1: SWING! (Optimale Bedingungen)**
+#### **🟢 SWING-MODE (Trend-Following Trading)**
 
 **WANN:**
-- ✅ Ruhige Woche, klare Trends
-- ✅ Keine Major Central Bank Events
+- ✅ Klare Trends (strong directional moves)
+- ✅ Wenig/keine Major-Events diese Woche
 - ✅ Stabile bis moderate Volatilität
 - ✅ Gute technische Setups (Breakouts, starke Support/Resistance)
 
 **TRADING-CONFIG:**
-- **trade_active = true**
 - **swing = true** (in config)
 - **TP NICHT anfassen!** (Läuft mit Trailing Stop!)
 - Exit: Trailing Stop automatisch
@@ -182,64 +191,28 @@ Welche Pairs haben high/low volatility diese Woche?
 
 ---
 
-#### **⚠️ STUFE 2: ATR! (Defensive Trading)**
+### **SCHRITT 4: Output im HYBRID-Format**
 
-**WANN:**
-- ⚠️ Moderate High-Impact Events (CPI, NFP, etc. - NICHT Central Bank Meetings!)
-- ⚠️ Dünne Liquidität (z.B. Year-End, Feiertage)
-- ⚠️ Range-bound markets (keine klaren Trends)
-- ⚠️ Moderate aber handelbare Volatilität
+Die AI liefert die Analyse im **HYBRID v2.0 Format:**
 
-**TRADING-CONFIG:**
-- **trade_active = true**
-- **swing = false** (in config)
-- **TP anpassen** (im tp_setting Bereich):
-  - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
-  - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (max!)
-- Exit: Schnell raus bei fixen TP-Zielen
-- Ziel: Kapitalsicherung, kleine sichere Gewinne
+#### **Format 1: GENERELL + EXCEPTIONS (Standard!)**
+
+```
+SWING! 🟢
+
+Ausnahmen (ATR!):
+- GBP/USD: BOE Meeting (Do)
+- USD/JPY: BOJ Intervention Risk
+```
+
+**Bedeutung:** Alle Symbole auf SWING, außer die genannten → Die auf ATR!
 
 ---
 
-#### **🔴 STUFE 3: PAUSE! (Sharrow's Todfeinde aktiv!)**
-
-**WANN:**
-- 🚨 **Central Bank Meeting Sandwich!** (z.B. FOMC → ECB → BOJ innerhalb 1 Woche!)
-- 🚨 **Central Bank Meeting Day selbst!** (Tag des Rate-Decisions!)
-- 🚨 **Ultra choppy, FOMO-Markets** (false breakouts überall!)
-- 🚨 **Unpredictable event-driven chaos**
-
-**TRADING-CONFIG:**
-- **trade_active = false** ← **KEIN TRADING!**
-- Begründung: Sharrow interpretiert Signale falsch → Stop-Loss Massaker!
-
-**Real-World Beispiel:**
-Ein Trader erlebte während eines ECB-Meeting-Tages 15+ Stop-Loss hits (CHFJPY, AUDUSD, CADCHF). Pattern: Trade öffnet → sofort Reversal → SL → neuer Trade → wieder SL! Verlust: ~€4.50 statt potentiellem +€2-3 Gewinn. Lösung: `trade_active=false` für Central Bank Meeting Days!
-
----
-
-### **SCHRITT 4: Output im 3-STUFEN + HYBRID Format**
-
-Die AI liefert die Analyse im **3-STUFEN-SYSTEM v3.0 Format:**
-
-#### **Format 1: STUFE 3 - PAUSE! (trade_active=false)**
+#### **Format 2: NUR EXCEPTIONS (bei homogenem Markt)**
 
 ```
-🔴 PAUSE! (trade_active=false)
-
-Grund: ECB Meeting (Mi-Do) = Central Bank Chaos!
-Pattern: Choppy markets, false breakouts → Sharrow's Todfeind!
-Empfehlung: Donnerstag Abend wieder starten (nach Decision).
-```
-
-**Bedeutung:** Komplettes Trading pausieren! Keine Trades diese Woche!
-
----
-
-#### **Format 2: STUFE 2 - ATR + EXCEPTIONS (trade_active=true)**
-
-```
-⚠️ ATR! (trade_active=true)
+ATR! ⚠️
 
 Ausnahmen (SWING ok):
 - EUR/GBP: Kein USD-Risk, stable
@@ -250,35 +223,102 @@ Ausnahmen (SWING ok):
 
 ---
 
-#### **Format 3: STUFE 1 - SWING + EXCEPTIONS (trade_active=true)**
+#### **Format 3: ALLE GLEICH (selten!)**
 
 ```
-🟢 SWING! (trade_active=true)
-
-Ausnahmen (ATR!):
-- GBP/USD: CPI Release (Di)
-- USD/JPY: NFP Risk (Fr)
-```
-
-**Bedeutung:** Alle Symbole auf SWING, außer die genannten → Die auf ATR!
-
----
-
-#### **Format 4: ALLE GLEICH (selten!)**
-
-```
-🟢 SWING! (trade_active=true)
-Ruhige Woche, klare Trends - optimal für Sharrow!
+SWING! (Ruhige Woche, klare Trends!)
 ```
 
 ODER
 
 ```
-⚠️ ATR! (trade_active=true)
-Dünne Liquidität (Year-End), defensive spielen!
+ATR! (FOMC + hohe Volatilität überall!)
 ```
 
-**Bedeutung:** Alle Symbole bekommen das gleiche Setting!
+**Bedeutung:** Alle 21 Symbole bekommen das gleiche Setting!
+
+---
+
+#### **Format 4: TAGES-SPEZIFISCHE DEAKTIVIERUNG (1-2 problematische Tage)**
+
+**WANN:** Nur 1-2 Tage sind hochriskant, Rest der Woche ist okay!
+
+**VORTEIL:** ML läuft weiter (trade_active = true), nur an bestimmten Tagen Algo-Handel in MT5 manuell ausschalten!
+
+**Beispiel-Output:**
+
+```
+SWING! 🟢
+
+Ausnahmen (ATR):
+- EUR/USD: ECB Meeting (Do)
+
+⚠️ WICHTIG - ALGO-HANDEL IN MT5 DEAKTIVIEREN:
+- Am 24.12.2025 (Mittwoch): Weihnachten, dünner Markt, Gap-Risiko extrem hoch
+  → Am 23.12.2025 um 22:00 Uhr in MT5: Algo-Handel Häkchen entfernen!
+  → Am 26.12.2025 um 08:00 Uhr in MT5: Algo-Handel wieder aktivieren!
+
+- Vom 31.12.2025 bis 01.01.2026: Neujahr, extreme Volatilität erwartet
+  → Am 30.12.2025 um 22:00 Uhr in MT5: Algo-Handel Häkchen entfernen!
+  → Am 02.01.2026 um 08:00 Uhr in MT5: Algo-Handel wieder aktivieren!
+```
+
+**Bedeutung:**
+- ML-Config: **trade_active = true** (ML läuft normal!)
+- Swing/ATR Settings normal setzen
+- ABER: An genannten Tagen MT5 Algo-Handel MANUELL deaktivieren!
+- **⚠️ KRITISCH:** Nach dem Event Algo-Handel WIEDER AKTIVIEREN (sonst läuft GAR NIX mehr!)
+
+---
+
+#### **Format 5: EXTREME WARNUNG (3+ von 5 Tagen problematisch)**
+
+**WANN:** 3 oder mehr Tage der Woche sind hochriskant!
+
+**GEFAHR:** Selbst "sichere" Tage könnten instabil sein durch Spillover-Effekte!
+
+**Beispiel-Output:**
+
+```
+⚠️⚠️⚠️ EXTREME WARNUNG! ⚠️⚠️⚠️
+
+3 VON 5 TAGEN SIND HOCHRISKANT DIESE WOCHE!
+
+Problematische Tage:
+- Montag 23.12.2025: Pre-Weihnachten (dünner Markt, früher Schluss)
+- Dienstag 24.12.2025: Weihnachten (Markt faktisch tot, extreme Spreads)
+- Mittwoch 25.12.2025: Weihnachtsfeiertag (viele Börsen geschlossen)
+
+KONKRETE GEFAHREN:
+❌ Gap-Risiken extrem hoch (über Feiertage!)
+❌ Liquidität minimal (keine großen Player aktiv)
+❌ Spread-Erweiterungen bis zu 300% möglich
+❌ News-Impact unvorhersehbar (dünner Markt = heftige Moves!)
+❌ Stop-Loss Slippage wahrscheinlich
+
+RESTLICHE WOCHE (Do/Fr):
+⚠️ Ebenfalls instabil erwartet:
+- Nachholeffekte von Weihnachten
+- Positionierungen für Neujahr
+- Geringe Liquidität hält an
+
+EMPFEHLUNG: ML KOMPLETT DEAKTIVIEREN!
+→ In Config setzen: trade_active = false
+→ Grund: Selbst Do/Fr wahrscheinlich zu riskant!
+→ Nächste Woche (ab 30.12.): trade_active = true wieder aktivieren
+
+Alternative (Risiko-tolerante Trader):
+Falls du trotzdem tradest:
+- Nur ATR-Mode (swing = false überall!)
+- TP maximal 1 ATR (schnell raus!)
+- Lot-Size halbieren!
+- Stop-Loss enger setzen!
+```
+
+**Bedeutung:**
+- **EMPFOHLEN:** trade_active = false (ganze Woche Pause!)
+- Falls trotzdem getradet wird: Maximales Risiko-Management!
+- **3/5-Regel:** Wenn 3+ Tage problematisch → Ganze Woche unsicher!
 
 ---
 
@@ -296,32 +336,85 @@ Nach dem Wochenausblick:
   - Geringe Volatilität + ruhiger Markt → TP = 1 ATR
   - Hohe Volatilität + ruhiger Markt → TP = 2 ATR (max!)
 
-### **3. STUFE 3: PAUSE (trade_active=false)**
+### **3. TAGES-SPEZIFISCHE DEAKTIVIERUNG (Format 4)**
 
-**WANN genau:**
-- Central Bank Meeting Sandwich (z.B. FOMC → ECB → BOJ innerhalb 1 Woche)
-- Central Bank Meeting Day selbst (Tag der Rate-Decision!)
-- Ultra choppy, FOMO-Markets (AI erkennt das!)
+**Wenn nur 1-2 Tage kritisch (z.B. Weihnachten, NFP, FOMC):**
 
-**UMSETZUNG:**
-- In config (ganz oben): **trade_active = false**
-- Sharrow macht GAR NICHTS die ganze Woche (oder nur an kritischen Tagen)!
-- Nach dem Event: **trade_active = true** wieder aktivieren
+**Workflow:**
 
-### **4. NOTFALL: Einzelne Katastrophen-Tage**
+1. **ML-Config bleibt aktiv:**
+   - In config: **trade_active = true** (ML läuft weiter!)
+   - Swing/ATR Settings normal setzen (wie im Wochenausblick)
 
-Wenn nur 1-2 Tage kritisch (z.B. Mi + Fr):
-- **Am Tag ZUVOR** (22-23 Uhr wenn Markt zu):
-  - In MT5: **Algo-Handel Häkchen entfernen**
-  - Sharrow tradet nicht mehr
-- **⚠️ WICHTIG:** Am nächsten Tag **Algo-Handel wieder aktivieren!**
-  - Sonst passiert GAR NIX mehr!
+2. **MT5 Algo-Handel manuell deaktivieren:**
+   - **Am Tag ZUVOR** um 22:00 Uhr (wenn Markt schließt):
+     - MT5 öffnen
+     - **Algo-Handel Häkchen entfernen** (Expert Advisors deaktivieren!)
+     - Sharrow tradet NICHT am kritischen Tag
 
-### **5. Sharrow neu starten** mit neuen Settings!
+3. **Nach dem Event wieder aktivieren:**
+   - **Am nächsten Tag** um 08:00 Uhr (wenn Markt wieder sicher):
+     - MT5 öffnen
+     - **Algo-Handel Häkchen WIEDER SETZEN!**
+     - ⚠️ **KRITISCH:** Wenn du das vergisst, tradet Sharrow GAR NICHT mehr!
+
+**Beispiel (Weihnachten):**
+- Wochenausblick sagt: "Am 24.12.2025 MT5 Algo-Handel deaktivieren"
+- **23.12.2025 um 22:00 Uhr:** MT5 → Algo-Handel Häkchen weg
+- **26.12.2025 um 08:00 Uhr:** MT5 → Algo-Handel Häkchen rein
+- **Vorteil:** ML läuft weiter (sammelt Daten!), nur der kritische Tag wird ausgelassen!
 
 ---
 
-## 📋 BEISPIEL-WORKFLOW
+### **4. EXTREME WARNUNG (Format 5: 3+/5 Tage problematisch)**
+
+**Wenn 3 oder mehr Tage der Woche hochriskant sind:**
+
+**Workflow:**
+
+1. **ML KOMPLETT DEAKTIVIEREN (Empfehlung!):**
+   - In config (ganz oben): **trade_active = false**
+   - Grund: Selbst "sichere" Tage sind durch Spillover-Effekte riskant!
+   - Sharrow macht GAR NICHTS die ganze Woche!
+
+2. **Nächste Woche wieder aktivieren:**
+   - Am Sonntag (vor neuer Handelswoche):
+   - In config: **trade_active = true** wieder setzen
+   - Neuen Wochenausblick machen!
+
+**Beispiel (Weihnachtswoche):**
+- Mo/Di/Mi problematisch (Pre-Weihnachten + Weihnachten)
+- Do/Fr wahrscheinlich auch instabil (Nachholeffekte)
+- **Empfehlung:** Ganze Woche trade_active = false
+- **Ab 30.12.:** Neuer Wochenausblick + trade_active = true
+
+**Alternative (NUR für Risiko-tolerante Trader!):**
+- trade_active = true ABER:
+  - Alle Symbole ATR-Mode (swing = false)
+  - TP maximal 1 ATR (schnell raus!)
+  - Lot-Size halbieren!
+  - Stop-Loss enger!
+- **⚠️ NICHT EMPFOHLEN!** Besser Pause machen!
+
+---
+
+### **5. NOTFALL: Markt-Katastrophe (ungeplant)**
+
+Wenn während der Woche etwas Unerwartetes passiert (Krieg, Crash, etc.):
+- **SOFORT:** In config: **trade_active = false**
+- MT5: **Algo-Handel Häkchen entfernen**
+- Offene Positionen manuell checken & ggf. schließen!
+- Markt beobachten, bis Situation klar ist
+
+---
+
+### **6. Sharrow neu starten** mit neuen Settings!
+
+---
+
+## 📋 BEISPIEL-WORKFLOWS
+
+### **BEISPIEL 1: Standard-Woche (Format 1)**
 
 **Freitag 22:30 Uhr:**
 - Markt geschlossen, Zeit für Wochenausblick!
@@ -349,6 +442,106 @@ Wenn nur 1-2 Tage kritisch (z.B. Mi + Fr):
 
 **Sonntag 23:00 Uhr:**
 - Sharrow läuft mit perfekten Settings in die neue Woche! 🎯
+
+---
+
+### **BEISPIEL 2: Tages-spezifische Deaktivierung (Format 4)**
+
+**Freitag 20.12.2025, 22:30 Uhr:**
+- Weihnachtswoche steht an, Zeit für Wochenausblick!
+
+**Samstag 21.12.2025, 10:00 Uhr:**
+- AI mit Internet öffnen
+- Command: "Wochenausblick"
+- AI analysiert Weihnachtswoche (30-45min)
+
+**Samstag 21.12.2025, 11:00 Uhr:**
+- AI liefert HYBRID-Output mit tages-spezifischer Warnung:
+  ```
+  ATR! ⚠️ (Weihnachtswoche = generell vorsichtig!)
+
+  ⚠️ WICHTIG - ALGO-HANDEL IN MT5 DEAKTIVIEREN:
+  - Am 24.12.2025 (Mittwoch): Weihnachten, dünner Markt, Gap-Risiko extrem hoch
+    → Am 23.12.2025 um 22:00 Uhr in MT5: Algo-Handel Häkchen entfernen!
+    → Am 26.12.2025 um 08:00 Uhr in MT5: Algo-Handel wieder aktivieren!
+
+  - Am 25.12.2025 (Donnerstag): Weihnachtsfeiertag, viele Börsen geschlossen
+    → BEREITS AM 23.12.2025 deaktiviert, bleibt aus bis 26.12.!
+  ```
+
+**Samstag 21.12.2025, 11:15 Uhr:**
+- Deine **Sharrow-Config** anpassen:
+  - **trade_active = true** (ML läuft weiter! ✅)
+  - Alle Symbole: swing = false, TP = 1 ATR (ATR-Mode, Weihnachtswoche!)
+
+**Sonntag 22.12.2025, 23:00 Uhr:**
+- Sharrow läuft mit ATR-Settings
+- **NOTIZ:** Am 23.12. um 22:00 Uhr MT5 Algo-Handel ausschalten!
+
+**Montag 23.12.2025:**
+- Mo-Di: Sharrow tradet normal (ATR-Mode)
+- **22:00 Uhr:** MT5 öffnen → **Algo-Handel Häkchen ENTFERNEN!**
+- Ab jetzt tradet Sharrow NICHT mehr (Mi+Do Pause!)
+
+**Mittwoch 24.12.2025:**
+- Weihnachten, Markt dünn, Sharrow pausiert ✅
+
+**Donnerstag 25.12.2025:**
+- Weihnachtsfeiertag, viele Börsen zu, Sharrow pausiert ✅
+
+**Freitag 26.12.2025:**
+- **08:00 Uhr:** MT5 öffnen → **Algo-Handel Häkchen WIEDER SETZEN!**
+- Ab jetzt tradet Sharrow wieder (Fr normal!)
+
+**Ergebnis:**
+- ✅ ML lief die ganze Woche (Daten gesammelt!)
+- ✅ Nur Mi+Do wurden übersprungen (kritische Tage!)
+- ✅ Mo/Di/Fr wurden normal getradet (ATR-Mode, sicher!)
+
+---
+
+### **BEISPIEL 3: Extreme Warnung (Format 5)**
+
+**Freitag 20.12.2025, 22:30 Uhr:**
+- Weihnachtswoche, ABER diesmal extreme Volatilität erwartet!
+
+**Samstag 21.12.2025, 11:00 Uhr:**
+- AI liefert EXTREME WARNUNG:
+  ```
+  ⚠️⚠️⚠️ EXTREME WARNUNG! ⚠️⚠️⚠️
+
+  3 VON 5 TAGEN SIND HOCHRISKANT DIESE WOCHE!
+
+  Problematische Tage:
+  - Mo 23.12.: Pre-Weihnachten (dünner Markt, früher Schluss)
+  - Di 24.12.: Weihnachten (Markt faktisch tot)
+  - Mi 25.12.: Weihnachtsfeiertag (viele Börsen geschlossen)
+
+  RESTLICHE WOCHE (Do/Fr):
+  ⚠️ Ebenfalls instabil erwartet (Nachholeffekte + Neujahrs-Positionierung)
+
+  EMPFEHLUNG: ML KOMPLETT DEAKTIVIEREN!
+  → trade_active = false
+  → Ganze Woche Pause!
+  ```
+
+**Samstag 21.12.2025, 11:15 Uhr:**
+- Deine **Sharrow-Config** anpassen:
+  - **trade_active = false** (Ganze Woche aus! ✅)
+  - Swing/ATR Settings NICHT ändern (läuft eh nicht!)
+
+**Sonntag 22.12.2025 - Freitag 27.12.2025:**
+- Sharrow macht GAR NICHTS diese Woche! ✅
+- Entspannen, Weihnachten feiern, kein Trading-Stress! 🎄
+
+**Samstag 28.12.2025:**
+- Neuen Wochenausblick für Neujahrswoche machen!
+- Falls Neujahrswoche okay: **trade_active = true** wieder setzen!
+
+**Ergebnis:**
+- ✅ Kein Risiko eingegangen (ganze Woche zu gefährlich!)
+- ✅ Kapital gesichert (keine Weihnachts-Gaps!)
+- ✅ Entspannte Feiertage! 💚
 
 ---
 
@@ -392,17 +585,9 @@ Wenn nur 1-2 Tage kritisch (z.B. Mi + Fr):
 **⚡ REMEMBER:**
 > "Sharrow ist intelligent - aber nicht hellsehend!
 > Ohne Wochenausblick tradet er im Blindflug.
-> Mit Wochenausblick tradet er mit Radar - und weiß wann er NICHT traden soll!" 🎯
-
----
-
-**🔥 3-STUFEN-SYSTEM v3.0:**
-- **STUFE 1 (SWING):** Optimale Bedingungen → Runner laufen lassen!
-- **STUFE 2 (ATR):** Defensive spielen → Kleine sichere Gewinne!
-- **STUFE 3 (PAUSE):** Central Bank Chaos → KEIN TRADING!
+> Mit Wochenausblick tradet er mit Radar!" 🎯
 
 ---
 
 *Made with 💚 by Shinpai-AI (Hannes Kell)*
-*For profitable, adaptive Forex-Trades!*
-*Open Source - Community-Driven - Professional*
+*Für profitable, adaptive Forex-Trades!*
