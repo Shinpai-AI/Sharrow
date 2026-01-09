@@ -1,5 +1,24 @@
 # 🚀 VPS Setup Guide - MetaTrader 5 mit TigerVNC
-> **Production Ready v1.0** - Getestet und funktionierend!
+> **Production Ready v2.0** - Komplett überarbeitet mit pCloud, Python & Auto-Deploy!
+
+---
+
+## 🆕 Was ist neu in v2.0?
+
+**Neue Features:**
+- ✅ **pCloud Mount** mit Auto-Start (rclone systemd service)
+- ✅ **Python Environment** Setup (venv + requirements.txt)
+- ✅ **GitHub Integration** (SSH Keys von pCloud, auto-clone Repos)
+- ✅ **Cronjobs** für News, ML-Training, Log-Cleaner
+- ✅ **Firefox Fix** für Ubuntu 24.04 (Snap → Mozilla PPA)
+- ✅ **dbus-x11** Integration (Black Screen Fix)
+- ✅ **WebTicker Support** (optional Bonus)
+
+**Verbesserungen:**
+- 🔧 Vollständig automatisierbare Phasen
+- 🔧 Systemd Services für alle kritischen Komponenten
+- 🔧 Erweiterte Troubleshooting Section
+- 🔧 Vollständige Lessons Learned
 
 ---
 
@@ -118,6 +137,9 @@ ufw status
 # Als haze (oder mit sudo)
 apt update
 apt install xfce4 xfce4-goodies -y
+
+# KRITISCH: dbus-x11 installieren (sonst Black Screen!)
+apt install dbus-x11 -y
 ```
 
 **Installation:**
@@ -130,6 +152,8 @@ apt install xfce4 xfce4-goodies -y
 - ✅ Keine Fehler (im Gegensatz zu MATE-core!)
 - ✅ Funktioniert perfekt mit TigerVNC
 - ✅ Leichtgewichtig aber vollständig
+
+**⚠️ WICHTIG:** `dbus-x11` ist zwingend erforderlich! Ohne dieses Paket startet XFCE nicht und VNC zeigt nur schwarzen Bildschirm!
 
 ---
 
@@ -228,6 +252,60 @@ ssh -p 1208 -i /path/to/private_key -L 5901:localhost:5901 haze@YOUR_VPS_IP
 
 # In neuer Shell: VNC Client zu localhost:5901 verbinden
 ```
+
+---
+
+## 🦊 PHASE 5A: FIREFOX FIX (Ubuntu 24.04)
+
+**⚠️ PROBLEM:** Ubuntu 24.04 installiert Firefox als Snap - funktioniert NICHT in VNC!
+
+**LÖSUNG:** Echtes Firefox vom Mozilla PPA installieren!
+
+### 5A.1 Snap Firefox entfernen
+
+```bash
+sudo snap remove firefox
+```
+
+---
+
+### 5A.2 Mozilla PPA hinzufügen
+
+```bash
+sudo add-apt-repository ppa:mozillateam/ppa -y
+sudo apt update
+```
+
+---
+
+### 5A.3 Firefox Priority setzen
+
+```bash
+sudo tee /etc/apt/preferences.d/mozilla-firefox > /dev/null << 'EOF'
+Package: *
+Pin: release o=LP-PPA-mozillateam
+Pin-Priority: 1001
+
+Package: firefox
+Pin: version 1:1snap*
+Pin-Priority: -1
+EOF
+```
+
+---
+
+### 5A.4 Echtes Firefox installieren
+
+```bash
+sudo apt remove firefox -y
+sudo apt install firefox -y
+
+# Version checken
+firefox --version
+# Output: Mozilla Firefox 146.x (kein "snap")
+```
+
+**✅ Firefox funktioniert jetzt in VNC!**
 
 ---
 
@@ -540,15 +618,270 @@ sudo systemctl restart ssh.service
 
 ---
 
-## 📦 PHASE 10: ZUSÄTZLICHE SOFTWARE
+## 📦 PHASE 10: RCLONE & PCLOUD MOUNT
 
-### 10.1 Sharrow von GitHub (Beispiel)
+### 10.1 rclone installieren
+
+```bash
+curl https://rclone.org/install.sh | sudo bash
+rclone --version
+```
+
+---
+
+### 10.2 FUSE Configuration
+
+```bash
+echo 'user_allow_other' | sudo tee -a /etc/fuse.conf
+```
+
+**Warum:** rclone mount benötigt `user_allow_other` in `/etc/fuse.conf`!
+
+---
+
+### 10.3 pCloud konfigurieren
+
+**⚠️ WICHTIG:** Dies muss **im VNC Desktop Terminal** gemacht werden (Firefox wird benötigt)!
+
+```bash
+# Im VNC Desktop Terminal:
+rclone config
+```
+
+**Ablauf:**
+1. `n` → New remote
+2. `name>` → **pcloud**
+3. `Storage>` → **pcloud** (oder Nummer)
+4. `hostname>` → **api.pcloud.com**
+5. `client_id>` → [ENTER - leer lassen]
+6. `client_secret>` → [ENTER - leer lassen]
+7. `Use web browser to automatically authenticate?` → **Y**
+8. Firefox öffnet sich → pCloud Login → Zugriff erlauben
+9. `y` → Yes this is OK
+10. `q` → Quit
+
+---
+
+### 10.4 pCloud Mount Auto-Start Service
+
+```bash
+sudo tee /etc/systemd/system/rclone-pcloud.service > /dev/null << 'EOF'
+[Unit]
+Description=rclone: pCloud Mount
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStartPre=/bin/mkdir -p /home/haze/pcloud
+ExecStart=/usr/bin/rclone mount pcloud: /home/haze/pcloud \
+  --vfs-cache-mode writes \
+  --allow-other \
+  --config /home/haze/.config/rclone/rclone.conf
+ExecStop=/bin/fusermount -u /home/haze/pcloud
+Restart=on-failure
+RestartSec=10
+User=haze
+Group=haze
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Service aktivieren & starten
+sudo systemctl daemon-reload
+sudo systemctl enable rclone-pcloud.service
+sudo systemctl start rclone-pcloud.service
+
+# Status checken
+sudo systemctl status rclone-pcloud.service
+
+# Testen
+ls ~/pcloud/
+```
+
+**✅ pCloud Mount ist jetzt dauerhaft verfügbar unter `~/pcloud/`!**
+
+---
+
+## 🐍 PHASE 11: PYTHON ENVIRONMENT
+
+### 11.1 Python Tools installieren
+
+```bash
+sudo apt install python3-venv python3-pip -y
+python3 --version
+```
+
+---
+
+### 11.2 Virtual Environment erstellen
+
+```bash
+cd ~/Trading
+python3 -m venv venv
+
+# Aktivieren
+source venv/bin/activate
+```
+
+---
+
+### 11.3 Requirements installieren
+
+```bash
+cd ~/Trading
+
+# requirements.txt erstellen
+cat > requirements.txt << 'EOF'
+# Sharrow/Goldjunge Trading Bot - Python Dependencies
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.10.0
+joblib>=1.3.0
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+python-dateutil>=2.8.0
+EOF
+
+# Packages installieren
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Testen
+python -c "import numpy, pandas, sklearn; print('✅ Packages OK!')"
+```
+
+**✅ Python Environment ready!**
+
+---
+
+## 📂 PHASE 12: GITHUB REPOS & SSH KEYS
+
+### 12.1 SSH Keys von pCloud kopieren
+
+**Voraussetzung:** pCloud Mount läuft (Phase 10!)
+
+```bash
+# Keys kopieren
+cp ~/pcloud/Shinpai-AI/Doku/Develop/shinpai-ai ~/.ssh/
+cp ~/pcloud/Shinpai-AI/Doku/Develop/shinpai-ai.pub ~/.ssh/
+cp ~/pcloud/Shinpai-AI/Doku/Develop/config ~/.ssh/
+cp ~/pcloud/Shinpai-AI/Doku/Develop/known_hosts ~/.ssh/
+
+# Permissions setzen
+chmod 600 ~/.ssh/shinpai-ai
+chmod 644 ~/.ssh/shinpai-ai.pub ~/.ssh/config
+
+# Testen
+ssh -T git@github.com-shinpai
+# Output: Hi Shinpai-AI! You've successfully authenticated...
+```
+
+---
+
+### 12.2 Git User Config
+
+```bash
+git config --global user.email 'haze@vps-mt5.local'
+git config --global user.name 'Haze VPS'
+```
+
+---
+
+### 12.3 Sharrow/Goldjunge Repository clonen
 
 ```bash
 mkdir -p ~/Trading
 cd ~/Trading
-git clone https://github.com/YOUR_USERNAME/Sharrow.git
+
+# Goldjunge als Root von ~/Trading
+git clone git@github.com-shinpai:Shinpai-AI/Goldjunge.git .
+
+# Struktur checken
+ls -la
+# Output: Goldjunge.mq5, TKB-*.py, RUN-*.sh, etc.
 ```
+
+**✅ Sharrow/Goldjunge ist ready!**
+
+---
+
+## ⏰ PHASE 13: CRONJOBS
+
+### 13.1 Logs-Ordner erstellen
+
+```bash
+mkdir -p ~/logs
+```
+
+---
+
+### 13.2 Cronjobs installieren
+
+```bash
+crontab -e
+```
+
+**Folgende Zeilen einfügen:**
+
+```bash
+# News - Mo-Fr 6-22 Uhr
+0 6-22 * * 1-5 /home/haze/Trading/RUN-news.sh
+
+# ML Training - Sonntag 22:00
+0 22 * * 0 /home/haze/Trading/RUN-train.sh
+
+# Log Cleaner - Sonntag 16:00
+0 16 * * 0 /home/haze/Trading/RUN-MT5-Log-Cleaner.sh
+```
+
+**Speichern & Beenden!**
+
+---
+
+### 13.3 Cronjobs checken
+
+```bash
+# Installierte Jobs anzeigen
+crontab -l
+
+# Scripts ausführbar machen
+chmod +x ~/Trading/*.sh
+```
+
+**✅ Cronjobs sind aktiv!**
+
+---
+
+## 🎁 BONUS: WEBTICKER (Optional)
+
+**WebTicker ist NICHT Teil von Sharrow!** Nur installieren wenn gewünscht!
+
+### WebTicker Repository clonen
+
+```bash
+cd ~/Trading
+git clone git@github.com:Shinpai-AI/WebTicker.git WebTicker
+```
+
+---
+
+### WebTicker Cronjob (Optional)
+
+```bash
+crontab -e
+```
+
+**Hinzufügen:**
+```bash
+# WebTicker - Jede Stunde
+0 * * * * /home/haze/Trading/WebTicker/RUN-WebTicker.sh
+```
+
+**✅ WebTicker läuft stündlich!** (Macht nur was bei neuem News-Eintrag)
 
 ---
 
@@ -819,6 +1152,24 @@ journalctl -f
    - VPS Zeit muss mit Handy exakt übereinstimmen
    - TOTP Codes funktionieren nur 30 Sekunden!
 
+9. **dbus-x11 ist PFLICHT für XFCE!**
+   - Ohne dbus-x11: VNC zeigt nur schwarzen Bildschirm
+   - `apt install dbus-x11 -y` NACH XFCE Installation!
+
+10. **Firefox als Snap funktioniert NICHT in VNC!**
+    - Ubuntu 24.04 installiert Snap-Version standardmäßig
+    - Snap entfernen, Mozilla PPA nutzen
+    - Echtes Firefox ist notwendig für rclone OAuth!
+
+11. **FUSE `user_allow_other` aktivieren für rclone!**
+    - rclone mount braucht `/etc/fuse.conf` mit `user_allow_other`
+    - Sonst schlägt mount fehl!
+
+12. **pCloud via VNC Desktop Terminal konfigurieren!**
+    - rclone OAuth braucht funktionierenden Browser
+    - SSH Session hat keinen DISPLAY
+    - Im VNC Terminal: `export DISPLAY=:1` reicht nicht - direkt im Desktop-Terminal arbeiten!
+
 ---
 
 ### ❌ DON'Ts:
@@ -854,15 +1205,21 @@ journalctl -f
 
 ```
 User Home:           /home/haze/
-SSH Keys:            /home/haze/.ssh/authorized_keys
+SSH Keys:            /home/haze/.ssh/ (authorized_keys, shinpai-ai, config)
 VNC Config:          /home/haze/.vnc/
 VNC xstartup:        /home/haze/.vnc/xstartup
 VNC Password:        /home/haze/.vnc/passwd
 MT5:                 /home/haze/.wine/drive_c/Program Files/MetaTrader 5/
+pCloud Mount:        /home/haze/pcloud/
+rclone Config:       /home/haze/.config/rclone/rclone.conf
 Downloads:           /home/haze/Downloads/
-Trading:             /home/haze/Trading/
-Sharrow:             /home/haze/Trading/Sharrow/
-Service File:        /etc/systemd/system/mt5-watchdog.service
+Trading:             /home/haze/Trading/ (Goldjunge Root!)
+WebTicker:           /home/haze/Trading/WebTicker/ (Optional)
+Python venv:         /home/haze/Trading/venv/
+Logs:                /home/haze/logs/
+MT5 Watchdog:        /etc/systemd/system/mt5-watchdog.service
+VNC Auto-Start:      /etc/systemd/system/vncserver@.service
+pCloud Mount:        /etc/systemd/system/rclone-pcloud.service
 2FA Config:          /home/haze/.google_authenticator
 SSH Config:          /etc/ssh/sshd_config
 PAM Config:          /etc/pam.d/sshd
@@ -880,12 +1237,31 @@ Sudoers:             /etc/sudoers.d/haze
 - [ ] Systemd ssh.socket disabled ✅
 - [ ] Firewall (UFW) aktiviert
 - [ ] XFCE Full installiert
+- [ ] **dbus-x11 installiert** (KRITISCH!)
+- [ ] **Firefox (nicht Snap!)** funktioniert
 - [ ] TigerVNC Server läuft (:1 = Port 5901)
+- [ ] **VNC Auto-Start Service** aktiv
 - [ ] Wine 9.0 installiert (32+64bit)
 - [ ] MT5 installiert via Wine GUI
 - [ ] MT5 Watchdog Service aktiv & auto-restart
 - [ ] Telegram WebRequest freigegeben (`https://api.telegram.org`)
-- [ ] 2FA konfiguriert + Zeit synchronisiert (optional aber empfohlen!)
+- [ ] 2FA konfiguriert + Zeit synchronisiert (optional)
+
+**Cloud & Data:**
+- [ ] **rclone installiert**
+- [ ] **FUSE konfiguriert** (`user_allow_other`)
+- [ ] **pCloud konfiguriert** (rclone config)
+- [ ] **pCloud Mount Service** läuft & auto-start
+- [ ] pCloud Mount funktioniert (`ls ~/pcloud/`)
+
+**Development:**
+- [ ] **Python venv erstellt** (`~/Trading/venv/`)
+- [ ] **Python Packages installiert** (numpy, pandas, sklearn, etc.)
+- [ ] **SSH Keys von pCloud kopiert**
+- [ ] **Git User Config gesetzt**
+- [ ] **Goldjunge Repository gecloned** (`~/Trading/`)
+- [ ] **Cronjobs installiert** (News, Training, Cleaner)
+- [ ] **WebTicker gecloned** (optional, `~/Trading/WebTicker/`)
 
 **Client Setup:**
 - [ ] SSH Connection zu Port 1208 funktioniert
@@ -991,23 +1367,34 @@ ss -tlnp | grep ssh
 
 ## 📄 VERSION INFO
 
-**Version:** 1.0 Production
-**Datum:** 2025-12-10
+**Version:** 2.0 Production
+**Datum:** 2026-01-09
 **Getestet auf:** Ubuntu 24.04 LTS
 **Status:** ✅ Production Ready
 
-**Setup-Typ:** MetaTrader 5 VPS mit TigerVNC
-**Use-Case:** Trading Bot 24/7 Deployment
+**Setup-Typ:** MetaTrader 5 VPS mit TigerVNC + pCloud + Python
+**Use-Case:** Sharrow/Goldjunge Trading Bot 24/7 Deployment
 **Remote Access:** TigerVNC via SSH Tunnel (Remmina)
 
 **Test-Umgebung:**
 - VPS: Ubuntu 24.04 LTS
 - RAM: 2GB+
-- Storage: 20GB+
+- Storage: 20GB+ (empfohlen: 30GB+ mit pCloud Cache)
 - XFCE: 4.18
+- dbus-x11: Latest
+- Firefox: 146.x (Mozilla PPA, nicht Snap!)
 - Wine: 9.0
 - TigerVNC: 1.13+
-- MT5: Latest (2025)
+- MT5: Latest (2026)
+- Python: 3.12.3
+- rclone: 1.72+
+
+**Neue Komponenten in v2.0:**
+- pCloud Mount (rclone systemd service)
+- Python venv mit ML Packages
+- GitHub SSH Integration
+- Cronjobs für automatisierte Tasks
+- WebTicker Support (optional)
 
 ---
 
