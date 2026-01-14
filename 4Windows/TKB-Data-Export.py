@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Sharrow-Data-Export.py
+Goldjunge-Data-Export.py
 
-Validiert und ergänzt lokale Trainings-CSV-Dateien im Sharrow-Ordner.
+Validiert und ergänzt lokale Trainings-CSV-Dateien im Goldjunge-Ordner.
 - Standardisiert *_extend.csv/MT5-CSV zu Train-Format: Time;Open;High;Low;Close;Volume
 - Optional: Ergänzt ältere Historie per Polygon.io (Config-getrieben)
 
 Aufruf:
-  python3 Sharrow-Data-Export.py --config TKB-config.json --dest .
+  python3 Goldjunge-Data-Export.py --config TKB-config.json --dest .
 """
 import argparse
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 import csv
 from typing import List, Tuple, Dict, Optional
 import time
@@ -518,7 +518,7 @@ def fetch_polygon_rows(symbol: str, tf: str, start_dt: datetime, end_dt: datetim
                 break
             for it in data.get('results', []) or []:
                 try:
-                    ts = datetime.utcfromtimestamp(it['t']/1000).strftime('%Y-%m-%d %H:%M')
+                    ts = datetime.fromtimestamp(it['t']/1000, tz=timezone.utc).strftime('%Y-%m-%d %H:%M')
                     o = f"{float(it['o']):.5f}"; h = f"{float(it['h']):.5f}"; l = f"{float(it['l']):.5f}"; c = f"{float(it['c']):.5f}"
                     v = str(int(it.get('v',0) or 0))
                     rows.append((ts,o,h,l,c,v))
