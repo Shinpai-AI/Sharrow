@@ -39,7 +39,7 @@ Antwort besteht aus drei Blöcken:
 
 ### B. Handelsdetails
 - Symbol (Broker-Schreibweise)
-- Einstiegstermin: `<Datum + Uhrzeit, wann du im Broker bereitstehen musst>`
+- Einstiegstermin: `<Datum + Uhrzeit, wann das Event eintritt>`
 - Richtung: Long/Short
 - Einsatz: `<aktueller Einsatzwert in EUR>`
 - Stop-Loss: `<aktueller SL-Prozentsatz>` des Einsatzes = `<absoluter EUR-Verlust>`
