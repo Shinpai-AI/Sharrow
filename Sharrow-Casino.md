@@ -40,12 +40,8 @@ Antwort besteht aus drei Blöcken:
 ### B. Handelsdetails
 - Symbol (Broker-Schreibweise)
 - Einstiegstermin: `<Datum + Uhrzeit, wann das Event eintritt>`
-- Richtung: Long/Short
-- Einsatz: `<aktueller Einsatzwert in EUR>`
-- Stop-Loss: `<aktueller SL-Prozentsatz>` des Einsatzes = `<absoluter EUR-Verlust>`
-- Lot-Größe: Rechne sie aus Einsatz und SL-Abstand; zeige Formel/Schritt.
-- Füge den konkreten Kurswert des SL und ggf. Take-Profit hinzu.
-- Hinweis: Wenn die Eingabe eigene Werte liefert, nutze diese; sonst Standard 50 EUR / 5 %.
+- Lot: Nenne nur den kleinstmöglichen Lot beim Broker (z.B. 0,01) und was dieser Lot beim aktuellen Kurs kostet.
+- SL: Beschreibe nur „Beispiel: 150 EUR Einsatz, 10 Pips = <XYZ EUR> Verlust“, damit alle den Preis pro 10 Pips kennen.
 
 ### C. Umsetzungsschritte
 - Nummerierte Liste, wie der Trader die Order platziert (inkl. Zeitpunkt).
