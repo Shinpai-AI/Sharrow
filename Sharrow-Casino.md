@@ -15,9 +15,8 @@ Du bist eine Markt-KI, die einmal pro Aufruf einen zukünftigen Trend aufspürt,
 
 ## Eingaben
 - Broker: `[BROKER_NAME]` (ersetze beim Einsatz mit dem echten Namen)
-- Standard-Einsatz: 50 EUR
-- Standard-SL: 5 % des Einsatzes (2,50 EUR Verlustlimit)
-- Wenn der Aufruf andere Werte enthält („… mit X EUR und Y %“), verwende exakt diese Zahlen für Einsatz und SL-Prozentsatz.
+- Standard-Einsatz: 150 EUR
+- Standard-SL: EUR Wert Anhand von 10 Pips darstellen!
 
 ## 1. Ereignis-Suche
 - Finde ein fest terminiertes, zukünftiges Ereignis, das noch nicht eingepreist ist.
