@@ -12,7 +12,7 @@ struct RuleEntry
    bool     processed;
   };
 
-input string InpRulesFile            = "/media/shinpai/Shinpai-AI/Trading/SharrowLOL/Rules-Master.txt";
+input string InpRulesFile            = "Rules-Master.txt";
 input double InpStakePercent         = 80.0;   // Anteil des Kontos als Einsatz (% des Equity)
 input double InpRiskPercent          = 10.0;   // Verlustlimit in % des Einsatzes (SL)
 input double InpTakeProfitPercent    = 0.0;    // Fester TP in % des Einsatzes (0 = swing)
@@ -80,18 +80,18 @@ void MaybeReloadRules()
    TimeToStruct(now,tm);
    if(tm.day_of_week!=0)
       return;
-   if(tm.hour!=23)
+   if(tm.hour!=16 && tm.hour!=23)
       return;
    if(now - g_last_reload < 3600)
       return;
    if(LoadRules())
-      Print("SharrowLOL: Wöchentliche Rules geladen.");
+      Print("SharrowLOL: Rules nach Zeitplan neu geladen.");
   }
 
 bool LoadRules()
   {
    ArrayFree(g_rules);
-   int handle = FileOpen(InpRulesFile,FILE_READ|FILE_TXT);
+   int handle = FileOpen(InpRulesFile,FILE_READ|FILE_TXT|FILE_ANSI);
    if(handle==INVALID_HANDLE)
      {
       PrintFormat("SharrowLOL: Rules-Datei %s nicht gefunden.",InpRulesFile);
@@ -101,6 +101,7 @@ bool LoadRules()
    while(!FileIsEnding(handle))
      {
       string line = FileReadString(handle);
+      PrintFormat("SharrowLOL: Rohzeile \"%s\"",line);
       if(StringLen(line)==0)
          continue;
       StringTrimLeft(line);
@@ -112,9 +113,17 @@ bool LoadRules()
          continue;
       string symbol = StringSubstr(line,0,sep);
       string tstr   = StringSubstr(line,sep+1);
-      datetime dt   = StringToTime(tstr);
-      if(symbol=="" || dt==0)
+      datetime dt;
+      if(symbol=="")
+        {
+         PrintFormat("SharrowLOL: Ignoriere Zeile \"%s\" – leeres Symbol.",line);
          continue;
+        }
+      if(!ParseRuleTime(tstr,dt))
+        {
+         PrintFormat("SharrowLOL: Ignoriere Zeile \"%s\" – Zeit nicht lesbar.",line);
+         continue;
+        }
 
       RuleEntry entry;
       entry.symbol     = symbol;
@@ -130,7 +139,7 @@ bool LoadRules()
    g_last_reload = TimeCurrent();
 
    PrintFormat("SharrowLOL: %d Rules geladen.",ArraySize(g_rules));
-   return true;
+  return true;
   }
 
 void UpdatePriceHistory()
@@ -400,6 +409,49 @@ double MoneyToPriceDistance(double amount,double volume)
 
    double ticks = amount/(tick_value*volume);
    return ticks*tick_size;
+  }
+
+bool ParseRuleTime(string raw,datetime &result)
+  {
+   string norm = raw;
+   StringTrimLeft(norm);
+   StringTrimRight(norm);
+   StringReplace(norm,"/","-");
+   StringReplace(norm,".","-");
+   // Erwartet Format YYYY-MM-DD HH:MM[:SS]
+   string parts[];
+   int count = StringSplit(norm,' ',parts);
+   if(count<2)
+      return false;
+
+   string date_part = parts[0];
+   string time_part = parts[1];
+
+   string date_tokens[];
+   if(StringSplit(date_part,'-',date_tokens)!=3)
+      return false;
+
+   string time_tokens[];
+   int tcount = StringSplit(time_part,':',time_tokens);
+   if(tcount<2)
+      return false;
+
+   MqlDateTime tm;
+   tm.year  = (int)StringToInteger(date_tokens[0]);
+   tm.mon   = (int)StringToInteger(date_tokens[1]);
+   tm.day   = (int)StringToInteger(date_tokens[2]);
+   tm.hour  = (int)StringToInteger(time_tokens[0]);
+   tm.min   = (int)StringToInteger(time_tokens[1]);
+   tm.sec   = (tcount>=3) ? (int)StringToInteger(time_tokens[2]) : 0;
+
+   if(tm.year<1970 || tm.mon<1 || tm.day<1)
+      return false;
+
+   datetime dt = StructToTime(tm);
+   if(dt<=0)
+      return false;
+   result = dt;
+   return true;
   }
 
 void ApplyInitialProtection()
