@@ -1,6 +1,6 @@
 #property copyright "Hannes Kell / Shinpai-AI"
 #property link      "https://shinpai.de"
-#property version   "1.00"
+#property version   "2.00"
 #property strict
 
 #include <Trade/Trade.mqh>
@@ -12,13 +12,19 @@ struct RuleEntry
    bool     processed;
   };
 
+// === ALTE PARAMETER (Einsatz/Volumen) ===
 input string InpRulesFile            = "Rules-Master.txt";
-input double InpStakePercent         = 80.0;   // Anteil des Kontos als Einsatz (% des Equity)
-input double InpRiskPercent          = 10.0;   // Verlustlimit in % des Einsatzes (SL)
-input double InpTakeProfitPercent    = 0.0;    // Fester TP in % des Einsatzes (0 = swing)
-input double InpTrailStartPercent    = 3.0;    // Profit in % des Einsatzes für Trailing-Start
-input double InpTrailGapPercent      = 2.0;    // Abstand (in %-Punkten) zwischen Profit und SL
-input double InpTriggerPercent       = 1.0;    // Preisänderung (in %) innerhalb des Fensters
+input double InpStakePercent         = 100.0;   // Anteil des Kontos als Einsatz (% des Equity)
+
+// === NEUE ATR-BASIERTE PARAMETER ===
+input ENUM_TIMEFRAMES InpATRTimeframe = PERIOD_H1;  // ATR Timeframe
+input int    InpATRPeriod            = 20;     // ATR Periode (Kerzen)
+input double InpTriggerATRPercent    = 5.0;    // Trigger: Bewegung in % des ATR (in 30 Sek)
+input double InpSL_ATRMultiplier     = 2.0;    // SL: X × ATR
+input double InpTrailStartATR        = 1.0;    // Trail Start: X × ATR Profit
+input double InpTrailGapATR          = 1.0;    // Trail Gap: X × ATR hinter Preis
+
+// === TIMING PARAMETER ===
 input int    InpTriggerWindowSeconds = 30;     // Zeitraum zur Messung der Preisbewegung
 input int    InpLeadMinutes          = 5;      // Beobachtung startet X Minuten vor Event
 input int    InpGraceSeconds         = 30;     // Beobachtung endet X Sekunden nach Event
@@ -32,23 +38,32 @@ datetime g_last_reload       = 0;
 ulong               g_ticket          = 0;
 double              g_entry_price     = 0.0;
 double              g_volume          = 0.0;
-double              g_stake_amount    = 0.0;
+double              g_frozen_atr      = 0.0;   // ATR eingefroren bei Trade-Open
 ENUM_POSITION_TYPE  g_type            = POSITION_TYPE_BUY;
-bool                g_protection_done = false;
+bool                g_sl_set          = false;
 
 datetime g_history_times[];
 double   g_history_prices[];
 
 int      g_symbol_digits = 0;
+int      g_atr_handle    = INVALID_HANDLE;
 
 int OnInit()
   {
    g_symbol_digits = (int)SymbolInfoInteger(_Symbol,SYMBOL_DIGITS);
 
-   if(InpRiskPercent<=0.0 || InpStakePercent<=0.0)
+   if(InpStakePercent<=0.0)
      {
-      Print("SharrowLOL: Einsatz- oder Risiko-Parameter ungültig.");
+      Print("SharrowLOL: Einsatz-Parameter ungültig.");
       return INIT_PARAMETERS_INCORRECT;
+     }
+
+   // ATR Indikator Handle erstellen
+   g_atr_handle = iATR(_Symbol, InpATRTimeframe, InpATRPeriod);
+   if(g_atr_handle == INVALID_HANDLE)
+     {
+      Print("SharrowLOL: ATR Indikator konnte nicht erstellt werden!");
+      return INIT_FAILED;
      }
 
    if(!LoadRules())
@@ -59,6 +74,8 @@ int OnInit()
 
 void OnDeinit(const int reason)
   {
+   if(g_atr_handle != INVALID_HANDLE)
+      IndicatorRelease(g_atr_handle);
    ArrayFree(g_rules);
    ArrayFree(g_history_times);
    ArrayFree(g_history_prices);
@@ -71,6 +88,23 @@ void OnTick()
 
    ManagePosition();
    MonitorRules();
+  }
+
+//+------------------------------------------------------------------+
+//| ATR Wert abrufen                                                  |
+//+------------------------------------------------------------------+
+double GetCurrentATR()
+  {
+   double atr_buffer[];
+   ArraySetAsSeries(atr_buffer, true);
+
+   if(CopyBuffer(g_atr_handle, 0, 0, 1, atr_buffer) <= 0)
+     {
+      Print("SharrowLOL: ATR konnte nicht gelesen werden!");
+      return 0.0;
+     }
+
+   return atr_buffer[0];
   }
 
 void MaybeReloadRules()
@@ -203,13 +237,13 @@ void MonitorRules()
       return;
      }
 
-   double change_pct=0.0;
-   if(!CheckTrigger(change_pct))
+   double price_change = 0.0;
+   if(!CheckATRTrigger(price_change))
       return;
 
-   ENUM_ORDER_TYPE order_type = (change_pct>=0.0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
+   ENUM_ORDER_TYPE order_type = (price_change >= 0.0) ? ORDER_TYPE_BUY : ORDER_TYPE_SELL;
 
-   if(OpenRuleTrade(order_type,rule.event_time))
+   if(OpenRuleTrade(order_type, rule.event_time))
      {
       g_rules[g_active_rule_index].processed = true;
       g_active_rule_index = -1;
@@ -243,7 +277,10 @@ int FindActiveRule(datetime now)
    return idx;
   }
 
-bool CheckTrigger(double &change_pct)
+//+------------------------------------------------------------------+
+//| ATR-basierter Trigger Check                                       |
+//+------------------------------------------------------------------+
+bool CheckATRTrigger(double &price_change)
   {
    int size = ArraySize(g_history_times);
    if(size<2)
@@ -270,11 +307,25 @@ bool CheckTrigger(double &change_pct)
    if(price_then<=0.0)
       return false;
 
-   change_pct = (price_now - price_then)/price_then * 100.0;
-   return MathAbs(change_pct) >= InpTriggerPercent;
+   // Preisänderung berechnen
+   price_change = price_now - price_then;
+   double abs_change = MathAbs(price_change);
+
+   // ATR abrufen
+   double current_atr = GetCurrentATR();
+   if(current_atr <= 0.0)
+      return false;
+
+   // Trigger: Bewegung >= X% des ATR
+   double trigger_threshold = current_atr * (InpTriggerATRPercent / 100.0);
+
+   PrintFormat("SharrowLOL: ATR=%.5f, Trigger=%.5f, Change=%.5f",
+               current_atr, trigger_threshold, abs_change);
+
+   return abs_change >= trigger_threshold;
   }
 
-bool OpenRuleTrade(ENUM_ORDER_TYPE order_type,datetime event_time)
+bool OpenRuleTrade(ENUM_ORDER_TYPE order_type, datetime event_time)
   {
    if(PositionSelect(_Symbol))
      {
@@ -302,13 +353,21 @@ bool OpenRuleTrade(ENUM_ORDER_TYPE order_type,datetime event_time)
       return false;
      }
 
-   double sl=0.0,tp=0.0;
+   // ATR einfrieren für diesen Trade
+   g_frozen_atr = GetCurrentATR();
+   if(g_frozen_atr <= 0.0)
+     {
+      Print("SharrowLOL: ATR konnte nicht eingefroren werden!");
+      return false;
+     }
+
+   double sl=0.0, tp=0.0;
    if(g_trade.PositionOpen(_Symbol,order_type,volume,price,sl,tp))
      {
-      PrintFormat("SharrowLOL: Trade eröffnet (%s, %.2f Lots) nach Rule %s.",
-                  EnumToString(order_type),volume,TimeToString(event_time));
-      InitializePositionState(order_type,volume,stake);
-      ApplyInitialProtection();
+      PrintFormat("SharrowLOL: Trade eröffnet (%s, %.2f Lots) nach Rule %s. ATR=%.5f",
+                  EnumToString(order_type),volume,TimeToString(event_time),g_frozen_atr);
+      InitializePositionState(order_type,volume);
+      ApplyATRStopLoss();
       return true;
      }
 
@@ -353,7 +412,7 @@ double VolumeForStake(ENUM_ORDER_TYPE order_type,double stake,double price)
    return NormalizeDouble(volume,vol_digits);
   }
 
-void InitializePositionState(ENUM_ORDER_TYPE order_type,double volume,double stake)
+void InitializePositionState(ENUM_ORDER_TYPE order_type, double volume)
   {
    if(!PositionSelect(_Symbol))
       return;
@@ -361,8 +420,7 @@ void InitializePositionState(ENUM_ORDER_TYPE order_type,double volume,double sta
    g_entry_price  = PositionGetDouble(POSITION_PRICE_OPEN);
    g_volume       = volume;
    g_type         = (order_type==ORDER_TYPE_BUY) ? POSITION_TYPE_BUY : POSITION_TYPE_SELL;
-   g_stake_amount = stake;
-   g_protection_done = false;
+   g_sl_set       = false;
   }
 
 void ManagePosition()
@@ -375,40 +433,95 @@ void ManagePosition()
          g_entry_price  = PositionGetDouble(POSITION_PRICE_OPEN);
          g_volume       = PositionGetDouble(POSITION_VOLUME);
          g_type         = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
-         g_stake_amount = AccountInfoDouble(ACCOUNT_EQUITY)*InpStakePercent/100.0;
-         g_protection_done = false;
+         g_sl_set       = (PositionGetDouble(POSITION_SL) != 0.0);
+
+         // Falls ATR nicht eingefroren, jetzt holen
+         if(g_frozen_atr <= 0.0)
+           {
+            g_frozen_atr = GetCurrentATR();
+            PrintFormat("SharrowLOL: ATR nachträglich eingefroren: %.5f", g_frozen_atr);
+           }
         }
       return;
      }
 
    if(!PositionSelectByTicket((long)g_ticket))
      {
-      g_ticket          = 0;
-      g_entry_price     = 0.0;
-      g_volume          = 0.0;
-      g_stake_amount    = 0.0;
-      g_protection_done = false;
+      g_ticket       = 0;
+      g_entry_price  = 0.0;
+      g_volume       = 0.0;
+      g_frozen_atr   = 0.0;
+      g_sl_set       = false;
       return;
      }
 
-   if(!g_protection_done)
-      ApplyInitialProtection();
-   ManageTrailing();
+   if(!g_sl_set)
+      ApplyATRStopLoss();
+
+   ManageATRTrailing();
   }
 
-double MoneyToPriceDistance(double amount,double volume)
+//+------------------------------------------------------------------+
+//| ATR-basierter Stop Loss                                           |
+//+------------------------------------------------------------------+
+void ApplyATRStopLoss()
   {
-   if(amount<=0.0 || volume<=0.0)
-      return 0.0;
-   double tick_value = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE_PROFIT);
-   if(tick_value<=0.0)
-      tick_value = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_VALUE);
-   double tick_size = SymbolInfoDouble(_Symbol,SYMBOL_TRADE_TICK_SIZE);
-   if(tick_value<=0.0 || tick_size<=0.0)
-      return 0.0;
+   if(g_frozen_atr <= 0.0)
+      return;
 
-   double ticks = amount/(tick_value*volume);
-   return ticks*tick_size;
+   double sl_distance = g_frozen_atr * InpSL_ATRMultiplier;
+
+   double sl_price = (g_type==POSITION_TYPE_BUY) ? g_entry_price - sl_distance
+                                                 : g_entry_price + sl_distance;
+   sl_price = NormalizeDouble(sl_price, g_symbol_digits);
+
+   if(g_trade.PositionModify(_Symbol, sl_price, 0.0))
+     {
+      g_sl_set = true;
+      PrintFormat("SharrowLOL: ATR-SL gesetzt auf %.5f (%.1f × ATR = %.5f)",
+                  sl_price, InpSL_ATRMultiplier, sl_distance);
+     }
+  }
+
+//+------------------------------------------------------------------+
+//| ATR-basiertes Trailing                                            |
+//+------------------------------------------------------------------+
+void ManageATRTrailing()
+  {
+   if(g_frozen_atr <= 0.0)
+      return;
+
+   double current_price = (g_type==POSITION_TYPE_BUY) ? SymbolInfoDouble(_Symbol,SYMBOL_BID)
+                                                      : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+
+   // Profit in Preis-Distanz berechnen
+   double profit_distance = (g_type==POSITION_TYPE_BUY) ? (current_price - g_entry_price)
+                                                        : (g_entry_price - current_price);
+
+   // Trail Start Check: Profit >= X × ATR
+   double trail_start_distance = g_frozen_atr * InpTrailStartATR;
+   if(profit_distance < trail_start_distance)
+      return;
+
+   // Trailing Gap: SL = aktueller Preis - X × ATR
+   double trail_gap = g_frozen_atr * InpTrailGapATR;
+   double desired_sl = (g_type==POSITION_TYPE_BUY) ? current_price - trail_gap
+                                                   : current_price + trail_gap;
+   desired_sl = NormalizeDouble(desired_sl, g_symbol_digits);
+
+   double current_sl = PositionGetDouble(POSITION_SL);
+
+   // Nur nachziehen, nie zurücksetzen
+   if(g_type==POSITION_TYPE_BUY && desired_sl <= current_sl)
+      return;
+   if(g_type==POSITION_TYPE_SELL && desired_sl >= current_sl && current_sl != 0.0)
+      return;
+
+   if(g_trade.PositionModify(_Symbol, desired_sl, PositionGetDouble(POSITION_TP)))
+     {
+      PrintFormat("SharrowLOL: ATR-Trail SL auf %.5f (Profit: %.5f, Gap: %.5f)",
+                  desired_sl, profit_distance, trail_gap);
+     }
   }
 
 bool ParseRuleTime(string raw,datetime &result)
@@ -452,71 +565,4 @@ bool ParseRuleTime(string raw,datetime &result)
       return false;
    result = dt;
    return true;
-  }
-
-void ApplyInitialProtection()
-  {
-   if(g_volume<=0.0 || g_stake_amount<=0.0)
-      return;
-
-   double risk_amount = g_stake_amount*InpRiskPercent/100.0;
-   double sl_distance = MoneyToPriceDistance(risk_amount,g_volume);
-   if(sl_distance<=0.0)
-      return;
-
-   double sl_price = (g_type==POSITION_TYPE_BUY) ? g_entry_price - sl_distance
-                                                 : g_entry_price + sl_distance;
-   sl_price = NormalizeDouble(sl_price,g_symbol_digits);
-
-   double tp_price = 0.0;
-   if(InpTakeProfitPercent>0.0)
-     {
-      double tp_amount = g_stake_amount*InpTakeProfitPercent/100.0;
-      double tp_distance = MoneyToPriceDistance(tp_amount,g_volume);
-      if(tp_distance>0.0)
-        {
-         tp_price = (g_type==POSITION_TYPE_BUY) ? g_entry_price + tp_distance
-                                                : g_entry_price - tp_distance;
-         tp_price = NormalizeDouble(tp_price,g_symbol_digits);
-        }
-     }
-
-   if(g_trade.PositionModify(_Symbol,sl_price,tp_price))
-     {
-      g_protection_done = true;
-      PrintFormat("SharrowLOL: SL %.5f / TP %.5f gesetzt.",sl_price,tp_price);
-     }
-  }
-
-void ManageTrailing()
-  {
-   double profit = PositionGetDouble(POSITION_PROFIT);
-   if(g_stake_amount<=0.0)
-      return;
-
-   double profit_pct = (profit/g_stake_amount)*100.0;
-   if(profit_pct < InpTrailStartPercent)
-      return;
-
-   double lock_pct = profit_pct - InpTrailGapPercent;
-   if(lock_pct<=0.0)
-      return;
-
-   double lock_amount = g_stake_amount*lock_pct/100.0;
-   double distance    = MoneyToPriceDistance(lock_amount,g_volume);
-   if(distance<=0.0)
-      return;
-
-   double desired_sl = (g_type==POSITION_TYPE_BUY) ? g_entry_price + distance
-                                                   : g_entry_price - distance;
-   desired_sl = NormalizeDouble(desired_sl,g_symbol_digits);
-
-   double current_sl = PositionGetDouble(POSITION_SL);
-   if(g_type==POSITION_TYPE_BUY && desired_sl <= current_sl)
-      return;
-   if(g_type==POSITION_TYPE_SELL && desired_sl >= current_sl && current_sl!=0.0)
-      return;
-
-   if(g_trade.PositionModify(_Symbol,desired_sl,PositionGetDouble(POSITION_TP)))
-      PrintFormat("SharrowLOL: Trail SL auf %.5f (%.2f%% Profit).",desired_sl,profit_pct);
   }
