@@ -66,7 +66,7 @@ class RulesCreatorApp(tk.Tk):
         tk.Label(form_frame, text="Datum (YYYY-MM-DD)").grid(row=1, column=0, sticky="w", **padding)
         tk.Entry(form_frame, textvariable=self.date_var).grid(row=1, column=1, sticky="ew", **padding)
 
-        tk.Label(form_frame, text="Uhrzeit").grid(row=2, column=0, sticky="w", **padding)
+        tk.Label(form_frame, text="Uhrzeit (⚠️ UTC/Server-Zeit!)").grid(row=2, column=0, sticky="w", **padding)
         time_frame = tk.Frame(form_frame)
         time_frame.grid(row=2, column=1, sticky="w", **padding)
         hours = [f"{h:02d}" for h in range(24)]
@@ -75,7 +75,8 @@ class RulesCreatorApp(tk.Tk):
         tk.Label(time_frame, text=":").pack(side=tk.LEFT)
         ttk.Combobox(time_frame, values=minutes, textvariable=self.minute_var, width=5, state="readonly").pack(side=tk.LEFT)
 
-        tk.Button(form_frame, text="Rule hinzufügen", command=self._add_rule).grid(row=3, column=0, columnspan=2, pady=5)
+        tk.Label(form_frame, text="⚠️ Berlin -1h = Server-Zeit!", fg="red").grid(row=3, column=0, columnspan=2, pady=2)
+        tk.Button(form_frame, text="Rule hinzufügen", command=self._add_rule).grid(row=4, column=0, columnspan=2, pady=5)
 
         ttk.Separator(self, orient="horizontal").grid(row=4, column=0, columnspan=2, sticky="ew", pady=5)
 

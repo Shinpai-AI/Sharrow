@@ -19,14 +19,14 @@ input double InpStakePercent         = 100.0;   // Anteil des Kontos als Einsatz
 // === NEUE ATR-BASIERTE PARAMETER ===
 input ENUM_TIMEFRAMES InpATRTimeframe = PERIOD_H1;  // ATR Timeframe
 input int    InpATRPeriod            = 20;     // ATR Periode (Kerzen)
-input double InpTriggerATRPercent    = 5.0;    // Trigger: Bewegung in % des ATR (in 30 Sek)
+input double InpTriggerATRPercent    = 10.0;   // Trigger: Bewegung in % des ATR (in 30 Sek)
 input double InpSL_ATRMultiplier     = 2.0;    // SL: X × ATR
 input double InpTrailStartATR        = 1.0;    // Trail Start: X × ATR Profit
 input double InpTrailGapATR          = 1.0;    // Trail Gap: X × ATR hinter Preis
 
 // === TIMING PARAMETER ===
 input int    InpTriggerWindowSeconds = 30;     // Zeitraum zur Messung der Preisbewegung
-input int    InpLeadMinutes          = 5;      // Beobachtung startet X Minuten vor Event
+input int    InpLeadMinutes          = 0;      // Beobachtung startet X Minuten vor Event
 input int    InpGraceSeconds         = 30;     // Beobachtung endet X Sekunden nach Event
 
 CTrade g_trade;
