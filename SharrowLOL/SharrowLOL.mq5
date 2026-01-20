@@ -29,6 +29,11 @@ input int    InpTriggerWindowSeconds = 30;     // Zeitraum zur Messung der Preis
 input int    InpLeadMinutes          = 0;      // Beobachtung startet X Minuten vor Event
 input int    InpGraceSeconds         = 30;     // Beobachtung endet X Sekunden nach Event
 
+// === WEBTICKER LOGGING ===
+input bool   InpEnableWebTicker      = false;  // WebTicker aktivieren (ON/OFF)
+input string InpStateLogFile         = "Goldjunge-state.log";  // WebTicker Log-Datei
+input int    InpSnapshotIntervalMin  = 60;     // Snapshot-Intervall in Minuten
+
 CTrade g_trade;
 
 RuleEntry g_rules[];
@@ -47,6 +52,10 @@ double   g_history_prices[];
 
 int      g_symbol_digits = 0;
 int      g_atr_handle    = INVALID_HANDLE;
+
+// === WEBTICKER STATE ===
+datetime g_last_snapshot   = 0;
+ulong    g_last_closed_ticket = 0;
 
 int OnInit()
   {
@@ -69,6 +78,17 @@ int OnInit()
    if(!LoadRules())
       Print("SharrowLOL: Regeln konnten nicht geladen werden – arbeite mit leerem Satz.");
 
+   // Initialer WebTicker Snapshot
+   if(InpEnableWebTicker && InpStateLogFile != "")
+     {
+      WriteWebTickerSnapshot();
+      Print("SharrowLOL: WebTicker Logging aktiviert -> ", InpStateLogFile);
+     }
+   else
+     {
+      Print("SharrowLOL: WebTicker Logging DEAKTIVIERT (InpEnableWebTicker=false)");
+     }
+
    return INIT_SUCCEEDED;
   }
 
@@ -88,6 +108,10 @@ void OnTick()
 
    ManagePosition();
    MonitorRules();
+
+   // WebTicker Logging
+   MaybeWriteSnapshot();
+   CheckClosedTrades();
   }
 
 //+------------------------------------------------------------------+
@@ -565,4 +589,162 @@ bool ParseRuleTime(string raw,datetime &result)
       return false;
    result = dt;
    return true;
+  }
+
+//+------------------------------------------------------------------+
+//| WEBTICKER LOGGING FUNKTIONEN                                      |
+//+------------------------------------------------------------------+
+
+string FormatISOTimestamp(datetime dt)
+  {
+   MqlDateTime tm;
+   TimeToStruct(dt, tm);
+   return StringFormat("%04d-%02d-%02dT%02d:%02d:%02dZ",
+                       tm.year, tm.mon, tm.day, tm.hour, tm.min, tm.sec);
+  }
+
+string FormatLogTimestamp(datetime dt)
+  {
+   MqlDateTime tm;
+   TimeToStruct(dt, tm);
+   return StringFormat("[%04d.%02d.%02d %02d:%02d:%02d]",
+                       tm.year, tm.mon, tm.day, tm.hour, tm.min, tm.sec);
+  }
+
+void WriteWebTickerSnapshot()
+  {
+   if(!InpEnableWebTicker || InpStateLogFile == "")
+      return;
+
+   datetime now = TimeCurrent();
+   double balance = AccountInfoDouble(ACCOUNT_BALANCE);
+   double equity = AccountInfoDouble(ACCOUNT_EQUITY);
+   double floating = equity - balance;
+
+   string json = StringFormat(
+      "{\"type\":\"snapshot\",\"timestamp\":\"%s\",\"balance\":%.2f,\"equity\":%.2f,\"floating\":%.2f}",
+      FormatISOTimestamp(now), balance, equity, floating);
+
+   string line = FormatLogTimestamp(now) + " [WEB_TICKER] " + json;
+
+   int handle = FileOpen(InpStateLogFile, FILE_WRITE|FILE_READ|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ);
+   if(handle != INVALID_HANDLE)
+     {
+      FileSeek(handle, 0, SEEK_END);
+      FileWriteString(handle, line + "\r\n");
+      FileClose(handle);
+     }
+
+   g_last_snapshot = now;
+  }
+
+void WriteWebTickerTrade(ulong ticket, string symbol, double volume, double profit,
+                         string order_type, datetime opened_at, datetime closed_at, string exit_reason)
+  {
+   if(!InpEnableWebTicker || InpStateLogFile == "")
+      return;
+
+   datetime now = TimeCurrent();
+
+   string json = StringFormat(
+      "{\"type\":\"trade\",\"ticket\":\"%d\",\"symbol\":\"%s\",\"volume\":%.2f,\"profit\":%.2f,\"order_type\":\"%s\",\"opened_at\":\"%s\",\"closed_at\":\"%s\",\"exit_reason\":\"%s\",\"comment\":\"SharrowLOL\"}",
+      ticket, symbol, volume, profit, order_type,
+      FormatISOTimestamp(opened_at), FormatISOTimestamp(closed_at), exit_reason);
+
+   string line = FormatLogTimestamp(now) + " [WEB_TICKER] " + json;
+
+   int handle = FileOpen(InpStateLogFile, FILE_WRITE|FILE_READ|FILE_TXT|FILE_UNICODE|FILE_SHARE_READ);
+   if(handle != INVALID_HANDLE)
+     {
+      FileSeek(handle, 0, SEEK_END);
+      FileWriteString(handle, line + "\r\n");
+      FileClose(handle);
+      PrintFormat("SharrowLOL: WebTicker Trade geloggt - Ticket %d, Profit %.2f", ticket, profit);
+     }
+  }
+
+void MaybeWriteSnapshot()
+  {
+   if(!InpEnableWebTicker || InpSnapshotIntervalMin <= 0)
+      return;
+
+   datetime now = TimeCurrent();
+   if(now - g_last_snapshot >= InpSnapshotIntervalMin * 60)
+     {
+      WriteWebTickerSnapshot();
+     }
+  }
+
+void CheckClosedTrades()
+  {
+   if(!InpEnableWebTicker)
+      return;
+
+   // Hole die letzten Deals aus der History
+   datetime from_time = TimeCurrent() - 300; // Letzte 5 Minuten
+   datetime to_time = TimeCurrent();
+
+   if(!HistorySelect(from_time, to_time))
+      return;
+
+   int total = HistoryDealsTotal();
+   for(int i = total - 1; i >= 0; i--)
+     {
+      ulong deal_ticket = HistoryDealGetTicket(i);
+      if(deal_ticket == 0)
+         continue;
+
+      // Nur Exit-Deals (DEAL_ENTRY_OUT)
+      ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(deal_ticket, DEAL_ENTRY);
+      if(entry != DEAL_ENTRY_OUT)
+         continue;
+
+      // Schon geloggt?
+      if(deal_ticket <= g_last_closed_ticket)
+         continue;
+
+      string symbol = HistoryDealGetString(deal_ticket, DEAL_SYMBOL);
+      double volume = HistoryDealGetDouble(deal_ticket, DEAL_VOLUME);
+      double profit = HistoryDealGetDouble(deal_ticket, DEAL_PROFIT);
+      datetime deal_time = (datetime)HistoryDealGetInteger(deal_ticket, DEAL_TIME);
+      ENUM_DEAL_TYPE deal_type = (ENUM_DEAL_TYPE)HistoryDealGetInteger(deal_ticket, DEAL_TYPE);
+      ENUM_DEAL_REASON reason = (ENUM_DEAL_REASON)HistoryDealGetInteger(deal_ticket, DEAL_REASON);
+
+      // Position Ticket für Open-Zeit
+      ulong pos_ticket = (ulong)HistoryDealGetInteger(deal_ticket, DEAL_POSITION_ID);
+      datetime opened_at = deal_time - 3600; // Fallback: 1h vorher
+
+      // Versuche echte Open-Zeit zu finden
+      if(HistorySelectByPosition(pos_ticket))
+        {
+         int pos_deals = HistoryDealsTotal();
+         for(int j = 0; j < pos_deals; j++)
+           {
+            ulong pos_deal = HistoryDealGetTicket(j);
+            if(pos_deal == 0) continue;
+            ENUM_DEAL_ENTRY pos_entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(pos_deal, DEAL_ENTRY);
+            if(pos_entry == DEAL_ENTRY_IN)
+              {
+               opened_at = (datetime)HistoryDealGetInteger(pos_deal, DEAL_TIME);
+               break;
+              }
+           }
+        }
+
+      // Order Type bestimmen (umgekehrt weil Exit)
+      string order_type = (deal_type == DEAL_TYPE_SELL) ? "BUY" : "SELL";
+
+      // Exit Reason
+      string exit_reason = "manual";
+      if(reason == DEAL_REASON_SL)
+         exit_reason = "sl";
+      else if(reason == DEAL_REASON_TP)
+         exit_reason = "tp";
+
+      WriteWebTickerTrade(deal_ticket, symbol, volume, profit, order_type, opened_at, deal_time, exit_reason);
+      g_last_closed_ticket = deal_ticket;
+
+      // Auch Snapshot nach Trade schreiben
+      WriteWebTickerSnapshot();
+     }
   }
