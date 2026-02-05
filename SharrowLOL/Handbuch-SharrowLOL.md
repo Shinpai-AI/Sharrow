@@ -8,7 +8,7 @@ Ziel: Bot auf MT5 starten, Rules eintragen, laufen lassen. Ohne Gelaber.
 - **MT5 installiert** (Windows oder Wine/Win‑VM)
 - **Brokerkonto** (z.B. NAGA) läuft
 - **Symbol passt zum Broker** (z.B. XAUUSD, NAS100, US30 …)
-- **Zeitzone:** alle Events in **Berliner Zeit (CET/CEST)**
+- **Zeitzone:** alle Events in **UTC**
 
 ---
 
@@ -94,7 +94,30 @@ Beispiele:
 
 ---
 
-## 6) Defaults (wenn du nichts angibst)
+## 6) Sharrow Exit (Event‑Flattern)
+Ziel: Wenn der Event‑Trade nach Einstieg nicht zügig ins Positive läuft, wird er automatisch beendet.
+
+**Parameter (Inputs im Bot):**
+- **Überwachte ATR** (`InpExitATRThreshold`): wie viel ATR‑Bewegung in die **richtige Richtung** erreicht werden muss  
+  Beispiel: `0.5` = 0,5 ATR
+- **Überwachungsdauer** (`InpExitWatchSeconds`): Zeitraum nach Einstieg (in Sekunden)  
+  Beispiel: `10`
+- **Mindest‑Profit** (`InpExitMinProfit`): ab welchem Profit **geschlossen werden darf** (EUR)  
+  Beispiel: `0.01`
+
+**Logik:**
+1. Nach Event‑Einstieg startet der Timer.
+2. Wenn **innerhalb der Zeit** nicht mindestens `Überwachte ATR` **ins Positive** erreicht wird → Exit wird vorbereitet.
+3. Der Bot schließt den Trade, **sobald Profit ≥ Mindest‑Profit** erreicht ist.
+
+**Standard‑Werte (empfohlen):**
+- Überwachte ATR: `0.5`
+- Überwachungsdauer: `10s`
+- Mindest‑Profit: `0.01`
+
+---
+
+## 7) Defaults (wenn du nichts angibst)
 - `event_trigger` = Bot‑Setting `InpTriggerATRPercent`
 - `event_watch` = Bot‑Setting `InpEventWatchSeconds`
 - `event_tp_atr` / `event_sl_atr` = Bot‑Settings `InpTrailingTP_ATR / InpTrailingSL_ATR`
@@ -106,8 +129,7 @@ Beispiele:
 
 ---
 
-## 7) Tipps
+## 8) Tipps
 - Nur **klare Events** eintragen (hohe Impact‑Daten)
 - Ein Symbol pro Zeile
 - Datum/Uhrzeit immer exakt UTC Zeit
-
