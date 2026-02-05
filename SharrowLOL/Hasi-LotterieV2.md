@@ -26,31 +26,42 @@ Nur Events mit sehr hoher Marktbewegung aufnehmen:
 - ✅ Fed/ECB/BoE Zinsentscheidungen
 - ✅ NFP (Non-Farm Payrolls)
 - ✅ CPI/Inflationsdaten (USA, EU)
-- ✅ Earnings von Mega-Caps (Apple, Microsoft, Tesla, NVIDIA, etc.)
 - ✅ GDP-Daten (Quartal)
 - ✅ PMI-Daten (ISM Manufacturing/Services)
 - ✅ FOMC Minutes
 - ✅ Wichtige Reden (Fed Chair, EZB-Präsidentin)
+- ✅ Consumer Confidence, Durable Goods Orders
 
 **TABU:**
 - ❌ "Vielleicht passiert was"-Termine
 - ❌ Gerüchte ohne festen Termin
-- ❌ Kleine Earnings (< 50 Mrd. Market Cap)
 - ❌ Regionale/unwichtige Daten
+- ❌ **US-AKTIEN EARNINGS (AAPL, MSFT, TSLA, etc.)** ← NICHT TRADEBAR BEI NAGA!
 
 ### B. NAGA-Symbole (ZWINGEND!)
 
 Jedes Event muss ein **eindeutiges NAGA-Symbol** haben:
 
-| Asset-Typ | NAGA-Beispiele |
-|-----------|----------------|
-| Indizes | NAS100, US30, US500, GER40 |
-| Forex | EURUSD, GBPUSD, USDJPY, USDCAD |
-| Rohstoffe | XAUUSD (Gold), XAGUSD (Silber), USOIL |
-| Aktien | AAPL, MSFT, TSLA, NVDA, AMZN, META, GOOGL |
-| Krypto | BTCUSD, ETHUSD |
+| Asset-Typ | NAGA-Beispiele | Tradebar? |
+|-----------|----------------|-----------|
+| Indizes | NAS100, US30, US500, GER40 | ✅ 24/5 |
+| Forex | EURUSD, GBPUSD, USDJPY, USDCAD | ✅ 24/5 |
+| Rohstoffe | XAUUSD (Gold), XAGUSD (Silber), USOIL | ✅ Fast 24/5 |
+| ~~Aktien~~ | ~~AAPL.OQ, MSFT.OQ, TSLA.OQ~~ | ❌ NUR Regular Hours! |
+| Krypto | BTCUSD, ETHUSD | ✅ 24/7 |
 
 **Keine Mehrdeutigkeit!** Immer exaktes Symbol angeben.
+
+### NAGA-EINSCHRÄNKUNG (WICHTIG!)
+
+> **US-Aktien bei NAGA = NUR Regular Hours (15:30-22:00 CET)**
+>
+> - NAGA liefert **KEINE After-Hours Daten**
+> - US-Earnings kommen um **22:00 CET = Market Close**
+> - Chart hängt → Bot kann nicht reagieren
+> - **DAHER: KEINE US-AKTIEN EARNINGS IN DEN KALENDER!**
+>
+> *Erkannt am 28.01.2026 beim TSLA Earnings-Versuch*
 
 ### C. Timing-Regeln
 
@@ -150,7 +161,7 @@ Jedes Event muss ein **eindeutiges NAGA-Symbol** haben:
 ### Montag, 27.01.
 | Zeit | Symbol | Event | Impact |
 |------|--------|-------|--------|
-| 16:00 | US30 | US New Home Sales | ★★★☆☆ |
+| 14:30 | SPX500 | US Durable Goods Orders | ★★★☆☆ |
 
 ### Dienstag, 28.01.
 | Zeit | Symbol | Event | Impact |
@@ -161,7 +172,6 @@ Jedes Event muss ein **eindeutiges NAGA-Symbol** haben:
 | Zeit | Symbol | Event | Impact |
 |------|--------|-------|--------|
 | 20:00 | NAS100 | FOMC Statement + Fed Zinsentscheid | ★★★★★ |
-| 22:00 | MSFT | Microsoft Earnings Q2 FY26 | ★★★★★ |
 
 ### Donnerstag, 30.01.
 | Zeit | Symbol | Event | Impact |
@@ -170,14 +180,17 @@ Jedes Event muss ein **eindeutiges NAGA-Symbol** haben:
 | 14:30 | US500 | Teil 1: US GDP Q4 Advance | |
 | 14:30 | US500 | Teil 2: Initial Jobless Claims | |
 | **EVENT-ENDE:** 14:30 | | | |
-| 22:00 | AAPL | Apple Earnings Q1 FY26 | ★★★★★ |
 
 ### Freitag, 31.01.
 | Zeit | Symbol | Event | Impact |
 |------|--------|-------|--------|
 | 11:00 | GER40 | DE GDP Q4 Flash | ★★★★☆ |
 | 14:30 | US500 | US Core PCE Price Index | ★★★★☆ |
+| 15:45 | NAS100 | Chicago PMI | ★★★☆☆ |
 ```
+
+> **BEACHTE:** Keine US-Aktien Earnings (AAPL, MSFT, TSLA) mehr im Beispiel!
+> Diese sind bei NAGA nicht tradebar (After-Hours = keine Daten).
 
 ---
 
@@ -191,4 +204,5 @@ Jedes Event muss ein **eindeutiges NAGA-Symbol** haben:
 
 ---
 
-*Erstellt: Januar 2026 | Hasi-Lotterie System*
+*Erstellt: Januar 2026 | Updated: 28.01.2026 | Hasi-Lotterie System*
+*Learning: US-Aktien Earnings entfernt (NAGA After-Hours Problem)*
