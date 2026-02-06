@@ -1,135 +1,164 @@
-# Handbuch – SharrowLOL (kurz & klar)
+# SharrowLOL Handbuch
 
-Ziel: Bot auf MT5 starten, Rules eintragen, laufen lassen. Ohne Gelaber.
-
----
-
-## 1) Start‑Check (kurz)
-- **MT5 installiert** (Windows oder Wine/Win‑VM)
-- **Brokerkonto** (z.B. NAGA) läuft
-- **Symbol passt zum Broker** (z.B. XAUUSD, NAS100, US30 …)
-- **Zeitzone:** alle Events in **UTC**
+> **Version:** 3.0 | **Stand:** 06.02.2026 | **Autor:** Shinpai-AI
 
 ---
 
-## 2) Bot einsetzen (MT5)
+## 1. Start-Check
+
+| Voraussetzung | Details                                        |
+|---------------|------------------------------------------------|
+| MT5           | Installiert (Windows oder Wine/Win-VM)         |
+| Broker        | Konto aktiv (z.B. NAGA)                        |
+| Symbol        | Passend zum Broker (XAUUSD, NAS100, US30, ...) |
+| Timeframe     | H1 (oder im Bot eingestellter TF)              |
+| **Zeitzone**  | **Alle Events in UTC (Broker-Zeit!)**          |
+
+---
+
+## 2. Bot einsetzen (MT5)
+
 1. MT5 öffnen
-2. Chart öffnen (Symbol, z.B. XAUUSD)
-3. **Timeframe auf H1** stellen (oder den im Bot eingestellten Timeframe)
-4. Bot `SharrowLOL` auf den Chart ziehen
-5. **AutoTrading aktivieren**
+2. Chart öffnen (gewünschtes Symbol)
+3. Bot **SharrowLOL** auf den Chart ziehen
+4. **AutoTrading aktivieren**
 
-**Empfohlen:**
-- **Freitag 22:00 Uhr bis Sonntag 23:00 Uhr** = perfekte Ruhe zum Einrichten/Sync
+> **Tipp:** Freitag 22:00 – Sonntag 23:00 Uhr = perfekte Ruhe zum Einrichten/Sync
 
 ---
 
-## 3) Rules‑Datei (Pflicht)
-Die Datei heißt:
-```
-Rules-Master.txt
-```
-und muss in dieses MT5‑Verzeichnis:
-```
-/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Files
-```
+## 3. Rules-Datei (Pflicht)
 
-### Cloud‑Workflow (empfohlen)
-- Rules‑Datei in Cloud‑Ordner pflegen
-- VPS synchronisiert automatisch
-- Symlink von Cloud‑Datei → `MQL5/Files`
+**Datei:** `Rules-Master.txt`
+**Pfad:** `/home/shinpai/.wine/drive_c/Program Files/MetaTrader 5/MQL5/Files`
 
-So musst du **nur eine Datei pflegen**.
+### Cloud-Workflow (empfohlen)
+
+1. Rules in Cloud-Ordner pflegen
+2. VPS sync't automatisch
+3. Symlink Cloud-Datei → `MQL5/Files`
+
+**Ergebnis:** Nur eine Datei pflegen!
 
 ---
 
-## 4) Rules‑Format (WICHTIG)
-**Eine Zeile = ein Event**
+## 4. Rules-Format
 
-Basis:
+> **Eine Zeile = ein Event**
+
+### Basis-Format
+
 ```
 SYMBOL;YYYY-MM-DD HH:MM
 ```
 
-Erweitert (mit Parametern):
+### Erweitertes Format
+
 ```
 SYMBOL;YYYY-MM-DD HH:MM;key=value;key=value;...
 ```
 
-### Unterstützte Parameter
-**Pre‑Event**
-- `pre_trigger` = % ATR
-- `pre_watch` = Dauer (z.B. `10m`, `600s`)
-- `close_before` = wie lange vor Event schließen (z.B. `60s`)
-- `pre_tp_atr`
-- `pre_sl_atr`
+---
 
-**Event**
-- `event_trigger` = % ATR
-- `event_watch` = Dauer (z.B. `30s`)
-- `event_tp_atr`
-- `event_sl_atr`
+## 5. Parameter-Referenz
 
-### Beispiel (voll)
+### Pre-Event Parameter
+
+| Parameter      | Beschreibung                 | Beispiel       |
+|----------------|------------------------------|----------------|
+| `pre_time`     | Vorlauf vor Event            | `30m`, `1800s` |
+| `pre_duration` | Trigger-Dauer ab Pre-Start   | `15m`          |
+| `pre_trigger`  | % ATR für Trigger            | `100`          |
+| `pre_tp_atr`   | Take-Profit in ATR           | `1.5`          |
+| `pre_sl_atr`   | Stop-Loss in ATR             | `2.0`          |
+| `pre_close`    | Sekunden vor Event schließen | `60s`          |
+
+### Event Parameter
+
+| Parameter               | Beschreibung                   | Beispiel |
+|-------------------------|--------------------------------|----------|
+| `event_duration`        | Trigger-Dauer ab Event-Start   | `30s`    |
+| `event_trigger`         | % ATR für Trigger              | `15`     |
+| `event_tp_atr`          | Take-Profit in ATR             | `0.8`    |
+| `event_sl_atr`          | Stop-Loss in ATR               | `1.2`    |
+| `event_exit_watch`      | Sharrow-Exit Überwachungsdauer | `10s`    |
+| `event_exit_atr`        | ATR-Schwelle für Exit          | `0.5`    |
+| `event_exit_min_profit` | Min-Profit für Exit (EUR)      | `0.01`   |
+
+### Einheiten
+
+| Typ           | Format            | Beispiele          |
+|---------------|-------------------|--------------------|
+| Trigger       | `%`               | `100`, `15`        |
+| Zeit/Duration | `s`, `m`, `h`     | `30m`, `60s`, `1h` |
+| TP/SL         | ATR-Multiplikator | `1.5`, `2.0`       |
+| Exit-Profit   | EUR               | `0.01`, `0.1`      |
+
+---
+
+## 6. Vollständiges Beispiel
+
 ```
-XAUUSD;2026-02-08 14:30;pre_trigger=45;pre_watch=10m;close_before=60s;pre_tp_atr=0.3;pre_sl_atr=0.5;event_trigger=10;event_watch=30s;event_tp_atr=1.0;event_sl_atr=1.0
+CHFJPY;2026-02-06 17:45;pre_time=30m;pre_duration=15m;pre_trigger=100;pre_tp_atr=1.5;pre_sl_atr=2.0;pre_close=60s;event_duration=30s;event_trigger=15;event_tp_atr=0.8;event_sl_atr=1.2;event_exit_watch=10s;event_exit_atr=0.5;event_exit_min_profit=0.01
 ```
 
-### Einheiten (idiotensicher)
-- **Trigger** immer in **%**
-- **Watch / Close** immer mit **s / m / h** (Sek, Min, Std)
-- **TP/SL** immer in **ATR**
+---
 
-Beispiele:
-- `pre_watch=5m`
-- `event_watch=30s`
-- `close_before=60s`
+## 7. Bot-Verhalten
+
+### Pre-Event Phase
+
+1. **Start:** `event_time - pre_time`
+2. **Trigger:** Nur innerhalb `pre_duration`
+3. **Auto-Close:** Position schließt `pre_close` Sekunden vor Event
+
+### Event Phase
+
+1. **Start:** Ab `event_time`
+2. **Trigger:** Innerhalb `event_duration`
+3. **Sharrow-Exit:**
+   - Prüft Favor-Move innerhalb `event_exit_watch`
+   - Wenn Move < `event_exit_atr × ATR` → wartet auf `event_exit_min_profit` & schließt
 
 ---
 
-## 5) Verhalten (ganz kurz)
-- **Pre‑Event** kann eine Position öffnen
-- **Pre‑Trade** wird **automatisch geschlossen** vor dem Event (`close_before`)
-- **Event‑Trade** startet separat zur Event‑Zeit
+## 8. Fehlerbehandlung
+
+| Situation           | Reaktion                                      |
+|---------------------|-----------------------------------------------|
+| Parameter fehlt     | Rule wird übersprungen + Warnung              |
+| Keine validen Rules | Bot stoppt + **FATAL-Warnung**                |
+| Rule geladen        | Detailliertes Log (Symbol, Zeit, alle Params) |
+
+> **Wichtig:** Alle Parameter sind Pflicht – keine Defaults für kritische Werte!
 
 ---
 
-## 6) Sharrow Exit (Event‑Flattern)
-Ziel: Wenn der Event‑Trade nach Einstieg nicht zügig ins Positive läuft, wird er automatisch beendet.
+## 9. Tipps & Best Practices
 
-**Parameter (Inputs im Bot):**
-- **Überwachte ATR** (`InpExitATRThreshold`): wie viel ATR‑Bewegung in die **richtige Richtung** erreicht werden muss  
-  Beispiel: `0.5` = 0,5 ATR
-- **Überwachungsdauer** (`InpExitWatchSeconds`): Zeitraum nach Einstieg (in Sekunden)  
-  Beispiel: `10`
-- **Mindest‑Profit** (`InpExitMinProfit`): ab welchem Profit **geschlossen werden darf** (EUR)  
-  Beispiel: `0.01`
+### Events finden
 
-**Logik:**
-1. Nach Event‑Einstieg startet der Timer.
-2. Wenn **innerhalb der Zeit** nicht mindestens `Überwachte ATR` **ins Positive** erreicht wird → Exit wird vorbereitet.
-3. Der Bot schließt den Trade, **sobald Profit ≥ Mindest‑Profit** erreicht ist.
+- Mit 2-3 KIs abgleichen (Claude, Grok, etc.)
+- Nur bei **Konfirmation von allen** eintragen
+- Fokus: Hohe Impact-Daten (News, Earnings)
 
-**Standard‑Werte (empfohlen):**
-- Überwachte ATR: `0.5`
-- Überwachungsdauer: `10s`
-- Mindest‑Profit: `0.01`
+### Parameter-Empfehlungen
 
----
+| Parameter          | Empfehlung                                              |
+|--------------------|---------------------------------------------------------|
+| **Pre-Time**       | So früh wie möglich (30-45min → 45m nehmen)             |
+| **Pre-Duration**   | Max 75% von Pre-Time (30m → max 22.5m)                  |
+| **Event-Duration** | Max 30s (hart) – je nach Volatilität                    |
+| **Pre TP/SL**      | Großzügig: 1-2 ATR (TP kleiner wegen Trailing, SL weit) |
+| **Event TP/SL**    | 0.5-2 ATR – an Volatilität anpassen                     |
+| **Min-Profit**     | Max 1 EUR, besser 0.01-0.1 EUR                          |
 
-## 7) Defaults (wenn du nichts angibst)
-- `event_trigger` = Bot‑Setting `InpTriggerATRPercent`
-- `event_watch` = Bot‑Setting `InpEventWatchSeconds`
-- `event_tp_atr` / `event_sl_atr` = Bot‑Settings `InpTrailingTP_ATR / InpTrailingSL_ATR`
-- `pre_trigger` = 40
-- `pre_watch` = 10m
-- `close_before` = 60s
-- `pre_tp_atr` = 0.3
-- `pre_sl_atr` = 0.5
+### Goldene Regeln
 
----
-
-## 8) Tipps
-- Nur **klare Events** eintragen (hohe Impact‑Daten)
 - Ein Symbol pro Zeile
-- Datum/Uhrzeit immer exakt UTC Zeit
+- Datum/Uhrzeit **exakt in Broker-Zeit (UTC)**
+- Immer alle Pflicht-Parameter angeben
+
+---
+
+*Erstellt: 06.02.2026 | SharrowLOL v3.0 | Shinpai-AI*
