@@ -41,12 +41,12 @@ input double InpStakePercent         = 100.0;         // Einsatz in % vom Konto 
 input double InpStakeFixed           = 0.0;           // Fixer Einsatz (0-X)
 
 // === BOT PARAMETER ====================================================
-input string     ___Bot-Parameter___       = "=== Bot-Parameter ==="; // -----
+input string     ___Bot_Parameter___       = "=== Bot-Parameter ==="; // -----
 input ENUM_TIMEFRAMES InpTradeTimeframe = PERIOD_H1;  // Timeframe
 input int    InpATRPeriod               = 20;         // ATR Periode (Kerzen)
 
 // === TP/SL - TRAILING =================================================
-input string     ___TP/SL-Trailing___       = "=== TP/SL-Trailing ==="; // -----
+input string     ___TP_SL_Trailing___       = "=== TP/SL-Trailing ==="; // -----
 input bool   InpTrailingEnabled         = true;       // Trailing ON/OFF
 
 // === WEBTICKER ========================================================
