@@ -1,0 +1,18 @@
+// Sharrow-Setting.txt – Bot-Einstellungen (v3.04)
+// Überschreibt MT5-Input-Defaults wenn vorhanden
+
+// Rules-Datei
+// → Wird über MT5-Input "Rules-Master.txt" gesteuert (nicht hier)
+
+// Einsatz
+stake_mode=percent
+stake_percent=100.0
+stake_fixed=0.0
+
+// Trailing
+trailing=true
+
+// WebTicker
+webticker=true
+webticker_log=Goldjunge-state.log
+webticker_interval=60

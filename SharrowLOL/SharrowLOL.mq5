@@ -48,6 +48,11 @@ input int    InpATRPeriod               = 20;         // ATR Periode (Kerzen)
 // === TP/SL - TRAILING =================================================
 input string     ___TP_SL_Trailing___       = "=== TP/SL-Trailing ==="; // -----
 input bool   InpTrailingEnabled         = true;       // Trailing ON/OFF
+input bool   InpSafetyLockEnabled       = true;       // Stake-Safety-Lock ON/OFF
+input double InpSafetyTriggerPctStake   = 1.0;        // Trigger in % vom Stake (z.B. 1.0)
+input double InpSafetyLockPctStake      = 0.05;       // Lock in % vom Stake (z.B. 0.05)
+input int    InpModifyRetryCount        = 5;          // Retries bei PositionModify
+input int    InpModifyRetryDelayMs      = 250;        // Pause zwischen Retries in ms
 
 // === WEBTICKER ========================================================
 input string     ___WebTicker___       = "=== WebTicker ==="; // -----
@@ -72,6 +77,8 @@ datetime activeEventTime     = 0;
 int      preHardCloseSeconds = 0;
 double   tpMultiplier        = 0.0;
 double   slMultiplier        = 0.0;
+double   tradeStakeAmount    = 0.0;
+bool     safetyLockActive    = false;
 
 // PRE PHASE STATE
 bool     isPreMonitoring     = false;
@@ -113,6 +120,16 @@ int OnInit()
    if(InpStakeMode == STAKE_PERCENT && (InpStakePercent <= 0.0 || InpStakePercent > 100.0))
      {
       Print("Ungültiger Stake-Parameter.");
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   if(InpSafetyTriggerPctStake <= 0.0 || InpSafetyLockPctStake <= 0.0)
+     {
+      Print("Ungültige Safety-Lock-Parameter.");
+      return INIT_PARAMETERS_INCORRECT;
+     }
+   if(InpModifyRetryCount < 1 || InpModifyRetryDelayMs < 0)
+     {
+      Print("Ungültige Modify-Retry-Parameter.");
       return INIT_PARAMETERS_INCORRECT;
      }
 
@@ -602,6 +619,8 @@ bool OpenTrade(ENUM_ORDER_TYPE dir, datetime evtTime, int phase, double tpMult, 
       activeEventTime = evtTime;
       tpMultiplier = tpMult;
       slMultiplier = slMult;
+      tradeStakeAmount = stake;
+      safetyLockActive = false;
       if(phase == 1)
          preHardCloseSeconds = closeSecs;
       else if(phase == 2)
@@ -672,6 +691,8 @@ void ManageActiveTrade()
          entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
          tradeVolume = PositionGetDouble(POSITION_VOLUME);
          positionDirection = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+         if(tradeStakeAmount <= 0.0)
+            tradeStakeAmount = (InpStakeMode == STAKE_FIXED ? InpStakeFixed : AccountInfoDouble(ACCOUNT_EQUITY) * InpStakePercent / 100.0);
 
          if(frozenATR <= 0.0)
            {
@@ -703,6 +724,9 @@ void ManageActiveTrade()
    if(currentPhase == 2)
       RunSharrowExit();
 
+   if(InpSafetyLockEnabled)
+      ApplyStakeSafetyLock();
+
    if(InpTrailingEnabled)
       ApplyUnlimitedTrailing();
   }
@@ -718,6 +742,8 @@ void ResetTradeState()
    preHardCloseSeconds = 0;
    tpMultiplier = 0.0;
    slMultiplier = 0.0;
+   tradeStakeAmount = 0.0;
+   safetyLockActive = false;
    sharrowActive = false;
    sharrowWaitingProfit = false;
    sharrowStartTime = 0;
@@ -766,7 +792,90 @@ void RunSharrowExit()
    else if(elapsed >= sharrowMonitorSeconds && sharrowMaxFavorMove >= needed)
      {
       sharrowActive = false;
-      sharrowWaitingProfit = false;
+     sharrowWaitingProfit = false;
+     }
+  }
+
+bool ModifyPositionWithRetry(double newSL, double newTP, string contextTag)
+  {
+   int tries = MathMax(1, InpModifyRetryCount);
+
+   for(int attempt = 1; attempt <= tries; attempt++)
+     {
+      ResetLastError();
+      bool ok = tradeEngine.PositionModify(_Symbol, newSL, newTP);
+      uint rc = (uint)tradeEngine.ResultRetcode();
+
+      if(ok && (rc == 0 || rc == TRADE_RETCODE_DONE || rc == TRADE_RETCODE_DONE_PARTIAL || rc == TRADE_RETCODE_PLACED))
+         return true;
+
+      PrintFormat("%s MODIFY FAIL [%d/%d] | retcode=%u (%s) | err=%d",
+                  contextTag, attempt, tries, rc, tradeEngine.ResultRetcodeDescription(), GetLastError());
+
+      if(attempt < tries && InpModifyRetryDelayMs > 0)
+         Sleep(InpModifyRetryDelayMs);
+     }
+
+   return false;
+  }
+
+void ApplyStakeSafetyLock()
+  {
+   if(safetyLockActive) return;
+   if(tradeStakeAmount <= 0.0 || tradeVolume <= 0.0 || entryPrice <= 0.0) return;
+
+   double triggerProfit = tradeStakeAmount * (InpSafetyTriggerPctStake / 100.0);
+   if(triggerProfit <= 0.0) return;
+
+   double floatingProfit = PositionGetDouble(POSITION_PROFIT);
+   if(floatingProfit < triggerProfit) return;
+
+   double lockProfit = tradeStakeAmount * (InpSafetyLockPctStake / 100.0);
+   if(lockProfit <= 0.0) return;
+
+   double tickSize = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_SIZE);
+   double tickValue = SymbolInfoDouble(_Symbol, SYMBOL_TRADE_TICK_VALUE);
+   if(tickSize <= 0.0 || tickValue <= 0.0) return;
+
+   double priceDist = (lockProfit * tickSize) / (tickValue * tradeVolume);
+   if(priceDist <= 0.0) return;
+
+   double lockSL = (positionDirection == POSITION_TYPE_BUY) ? (entryPrice + priceDist) : (entryPrice - priceDist);
+   lockSL = NormalizeDouble(lockSL, symbolDigits);
+
+   double currSL = PositionGetDouble(POSITION_SL);
+   double currTP = PositionGetDouble(POSITION_TP);
+   double wantSL = currSL;
+   bool needSLUpdate = false;
+
+   if(positionDirection == POSITION_TYPE_BUY)
+     {
+      if(currSL == 0.0 || lockSL > currSL)
+        {
+         wantSL = lockSL;
+         needSLUpdate = true;
+        }
+     }
+   else
+     {
+      if(currSL == 0.0 || lockSL < currSL)
+        {
+         wantSL = lockSL;
+         needSLUpdate = true;
+        }
+     }
+
+   if(!needSLUpdate)
+     {
+      safetyLockActive = true;
+      return;
+     }
+
+   if(ModifyPositionWithRetry(wantSL, currTP, "SAFETY_LOCK"))
+     {
+      safetyLockActive = true;
+      PrintFormat("SAFETY LOCK SET | Trigger=%.2f EUR | Lock=%.2f EUR | NewSL=%.5f",
+                  triggerProfit, lockProfit, wantSL);
      }
   }
 
@@ -810,7 +919,7 @@ void ApplyUnlimitedTrailing()
 
    if(!needSLUpdate) wantSL = currSL;
 
-   if(tradeEngine.PositionModify(_Symbol, wantSL, wantTP))
+   if(ModifyPositionWithRetry(wantSL, wantTP, "TRAILING"))
       PrintFormat("Trailing UPDATE | SL=%.5f | TP=%.5f | Price=%.5f | ATR=%.5f", wantSL, wantTP, currPrice, frozenATR);
   }
 

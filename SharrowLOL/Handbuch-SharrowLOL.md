@@ -124,3 +124,90 @@ CHFJPY;2026-02-06 17:45;pre_time=30m;pre_duration=15m;pre_trigger=100;pre_tp_atr
 - Min-Profit: Max 1 EUR, eher 0.01-0.1 EUR (oder 0.01%-0.1% vom Stake – rechnen!)
 - Ein Symbol pro Zeile
 - Datum/Uhrzeit exakt in Broker-Zeit (UTC)
+
+---
+
+## 8) Sharrow-Setting.txt (Optional, ab v3.04)
+
+**Zweck:** Bot-Einstellungen persistent speichern, damit sie nach VPS-Neustarts erhalten bleiben. Überschreibt die MT5-Input-Parameter wenn vorhanden.
+
+**Datei:** Sharrow-Setting.txt
+
+**Pfad:** Gleicher Ordner wie Rules-Master.txt (MQL5/Files)
+
+### Verhalten
+
+- Datei **nicht vorhanden** → Kein Problem, Bot nutzt die MT5-Input-Defaults
+- Datei **vorhanden und korrekt** → Settings überschreiben die Input-Defaults
+- Datei **vorhanden aber gesperrt** → Bot wartet 5s und probiert erneut (max 5 Min)
+- Datei **vorhanden aber Inhalt fehlerhaft** → FATAL, Bot stoppt
+
+### Format
+
+Eine Zeile pro Setting, Key=Value. Kommentare mit `//` am Zeilenanfang.
+
+```
+// Sharrow-Setting.txt – Bot-Einstellungen
+// Nur angegebene Werte werden überschrieben
+
+stake_mode=percent
+stake_percent=100.0
+stake_fixed=0.0
+trailing=true
+webticker=false
+webticker_log=Goldjunge-state.log
+webticker_interval=60
+```
+
+### Unterstützte Keys
+
+| Key | Werte | Beschreibung |
+|-----|-------|-------------|
+| stake_mode | `percent` oder `fixed` | Einsatz-Berechnung |
+| stake_percent | 0-100 (z.B. `100.0`) | Einsatz in % vom Konto |
+| stake_fixed | Betrag (z.B. `50.0`) | Fixer Einsatz in EUR |
+| trailing | `true`/`false`/`on`/`off`/`1`/`0` | Trailing SL/TP an/aus |
+| webticker | `true`/`false`/`on`/`off`/`1`/`0` | WebTicker an/aus |
+| webticker_log | Dateiname (z.B. `Goldjunge-state.log`) | WebTicker Log-Datei |
+| webticker_interval | Minuten (z.B. `60`) | Snapshot-Intervall |
+
+### Tipps
+
+- Nur die Settings eintragen, die vom Default abweichen sollen
+- Nicht eingetragene Keys behalten den MT5-Input-Default
+- Datei löschen = zurück zu Input-Defaults
+- Bei VPS-Betrieb: Settings-Datei per Cloud-Sync oder Symlink einbinden (wie Rules-Master)
+
+---
+
+## 9) Multi-Instanz & File-Locking (ab v3.04)
+
+Wenn mehrere SharrowLOL-Instanzen gleichzeitig starten (z.B. auf verschiedenen Charts), greifen alle auf die gleichen Dateien zu.
+
+### Problem (vor v3.04)
+
+Erste Instanz öffnet die Datei → alle weiteren bekommen "Datei gesperrt" → FATAL.
+
+### Lösung (ab v3.04)
+
+- **FILE_SHARE_READ:** Alle Datei-Zugriffe erlauben paralleles Lesen
+- **Retry-Loop:** Wenn eine Datei trotzdem gesperrt ist → 5 Sekunden warten, erneut versuchen
+- **Max 60 Versuche** (= 5 Minuten), dann FATAL
+- Gilt für Rules-Master.txt UND Sharrow-Setting.txt
+
+### Ablauf bei Multi-Instanz-Start
+
+```
+Instanz 1 (AUDUSD): Settings laden ✅ → Rules laden ✅ → Läuft!
+Instanz 2 (NAS100):  Settings gesperrt → 5s → Retry ✅ → Rules laden ✅ → Läuft!
+Instanz 3 (SPX500):  Settings gesperrt → 5s → Retry ✅ → Rules laden ✅ → Läuft!
+```
+
+### Init-Reihenfolge (v3.04)
+
+1. ATR-Handle erstellen
+2. Sharrow-Setting.txt laden (optional, mit Retry)
+3. Settings validieren (z.B. stake_percent Bereich)
+4. Rules-Master.txt laden (Pflicht, mit Retry)
+5. WebTicker initialisieren (falls aktiv)
+6. Bot bereit
